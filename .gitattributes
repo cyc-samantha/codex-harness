@@ -1,0 +1,28 @@
+# Line-ending normalization — keep diffs low.
+#
+# WHY: AGENTS.md once picked up CRLF from a Windows-side editor (WSL2 host),
+# producing an 872-line phantom diff with zero content change. `text=auto
+# eol=lf` makes git normalize to LF at commit time and check out LF, so
+# whole-file EOL churn can never reach a diff again.
+
+* text=auto eol=lf
+
+# Explicit text types (belt-and-braces over auto-detection)
+*.md    text eol=lf
+*.sh    text eol=lf
+*.py    text eol=lf
+*.toml  text eol=lf
+*.json  text eol=lf
+*.jsonl text eol=lf
+*.rules text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Binary — never diff, never normalize
+*.png    binary
+*.jpg    binary
+*.sqlite binary
+*.db     binary
+
+# Machine-written artifacts: keep out of human review noise
+eval/baselines/*.md linguist-generated=true

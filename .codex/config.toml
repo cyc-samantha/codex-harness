@@ -1,0 +1,32 @@
+# codex-harness — Codex CLI config skeleton (CX-03)
+#
+# Permission posture (PLAN.md §3, Hooks Substitution Ladder step 4):
+# `codex exec` defaults to read-only. The orchestration script explicitly
+# requests `workspace-write` per Build-phase invocation and NEVER
+# `danger-full-access` outside a documented isolated runner.
+
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[agents]
+# WHY: Codex's documented default is 1; the harness sets 3 to match the
+# Claude side's CLAUDE_SUBAGENT_MAX_DEPTH default. Behavior above the
+# default is unconfirmed in the doc set — flagged for a real-world load
+# test in CX-91 (Phase 6) before any pipeline depends on depth > 1.
+max_depth = 3
+
+# ---------------------------------------------------------------------------
+# Memory MCP server — registered at CX-31 (Phase 3), once memory/ is ported.
+#
+# `required = true` makes `codex exec` exit with an error if the memory
+# server fails to start: the codex-harness equivalent of the Claude
+# harness's fail-closed posture for a broken memory index (Iron Law 8).
+# Kept commented until CX-30 lands the server, because required=true with
+# a nonexistent script would (correctly, but unhelpfully) fail every
+# invocation of this skeleton.
+#
+# [mcp_servers.memory]
+# command = "python3"
+# args = ["$CODEX_HOME/harness-data/mcp_memory/server.py"]
+# required = true
+# ---------------------------------------------------------------------------

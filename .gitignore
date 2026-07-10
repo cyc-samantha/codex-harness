@@ -1,0 +1,11 @@
+# Claude-side worktrees used while building this harness
+.claude/worktrees/
+
+# Runtime state — never committed (see AGENTS.md § Runtime State)
+pipeline-state/*
+!pipeline-state/README.md
+
+# Local scratch
+*.local
+__pycache__/
+*.pyc
