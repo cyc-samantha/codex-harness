@@ -9,7 +9,9 @@ Populated by Phase 1 (CX-10 through CX-13) from the source harness at
 DROPPED) live in `PLAN.md` §6 Skill Port Catalog. Every `PROMPT`-decision
 skill (58 dirs) plus `internal-eval`'s orchestration-shell `SKILL.md` (its
 `run`/`score`/`capture`/`validate` sub-skills are `SCRIPT`, Phase 4 scope,
-and are not ported here) is present below — **59 skills total**.
+and are not ported here) is present below, plus `harness-resume-handoff`
+(Phase 7 contractor-handoff kit, CX-72, no Claude-harness source
+counterpart — new to codex-harness) — **60 skills total**.
 
 Every ported directory is prefixed `harness-<name>` (Codex has no per-repo
 namespace, so the prefix avoids collision with a target repo's own skills
@@ -18,8 +20,8 @@ once installed via `scripts/install-skills.sh`).
 Constraint honored when porting (CX-10): Codex caps the initial skill list
 at 2% of the model context window (or 8,000 characters when unknown), so
 skill `description:` fields were audited and trimmed to front-load trigger
-words. **Aggregate `description:` character count across all 59 ported
-skills: 8,301** (measured post-trim; each individual description is under
+words. **Aggregate `description:` character count across all 60 ported
+skills: 8,516** (measured post-trim; each individual description is under
 300 characters).
 
 Skipped from this port (see `PLAN.md` §6 for full rationale):
@@ -87,6 +89,7 @@ Skipped from this port (see `PLAN.md` §6 for full rationale):
 | `harness-qa-test-strategy` | PROMPT | Use when user wants to Test phase skill: spawn qa-engineer to map acceptance criteria to tests, identify coverage gaps, and write integration/E2E tests. |
 | `harness-react-native-patterns` | PROMPT | Use when user wants to Expo Router v4 patterns, NativeWind, Gluestack UI v3, TanStack Query + Zustand, platform handling, Maestro E2E. |
 | `harness-refactor` | PROMPT | Use when user wants to Safe refactoring workflow: identify smell, write characterization tests, refactor in small steps, verify green after each. |
+| `harness-resume-handoff` | PROMPT | Resume work handed off by the Claude harness: reads ACTIVE_HARNESS baton + HANDOFF.md, reconciles against git ground truth, continues the task vertically, and wraps by writing a return HANDOFF.md with baton: claude. |
 | `harness-sandbox-verify` | PROMPT | Build-phase gate: runs the test suite in a remote E2B sandbox and compares pass sets against the worktree. |
 | `harness-security-alert-fix` | PROMPT | Use to investigate and fix open GitHub security alerts (CodeQL + secret-scanning). |
 | `harness-security-review` | PROMPT | Security Review phase: spawns security-engineer for OWASP Top 10 audit, dependency scanning, secrets detection, auth/authz review. Runs after Build and gates Final Gate. |
