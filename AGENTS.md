@@ -375,12 +375,24 @@ orchestration script (`&` + `wait`) — this mirrors the Claude harness's
 has no visible-team/tmux-pane equivalent; every dispatch here is the
 parallel-subagent default.
 
-**Runtime state** lives under `$CODEX_HOME/harness-data` (defaults to
-`~/.codex/harness-data`, overridable) — this preserves the same
-seed-vs-runtime split the Claude harness uses for `$CLAUDE_PLUGIN_DATA`:
-this repo ships only curated seed (skills, agent TOML configs, seeded
-memory index config); runtime state (pipeline-state, session-memory,
-metrics, per-task learning artifacts) is never committed back to this repo.
+**Runtime state** lives under `${HARNESS_DATA:-$HOME/.claude}` — the SAME
+directory the Claude harness uses for `$CLAUDE_PLUGIN_DATA`, not a
+separate `$CODEX_HOME/harness-data` tree. This is a deliberate consequence
+of the contractor model (see `pipeline-state/HANDOFF-CONTRACT.md`, CX-70
+through CX-73): Codex is a fallback contractor invoked when the Claude
+harness's 5-hour usage window runs out, not a parallel independent
+harness, so `pipeline-state/`, `session-memory/`, and the learning
+observations log need to be the same files on disk for whichever side is
+on shift — one copy of truth, no sync job, no drift to reconcile. A
+`HANDOFF.md` + `ACTIVE_HARNESS` baton file (both documented in
+`pipeline-state/HANDOFF-CONTRACT.md`) coordinate the shift change and
+warn against concurrent writers.
+
+This preserves the same seed-vs-runtime split the Claude harness already
+uses: this repo ships only curated seed (skills, agent TOML configs,
+seeded memory index config); runtime state (pipeline-state,
+session-memory, metrics, per-task learning artifacts) is never committed
+back to this repo, regardless of which harness wrote it.
 
 **Vision/screenshot-diff work** (`vlm-critic`, `design-qc`) is DROPPED for
 now — Codex's tool surface for vision/computer-use was not confirmed in the

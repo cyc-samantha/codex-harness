@@ -27,6 +27,6 @@ max_depth = 3
 #
 # [mcp_servers.memory]
 # command = "python3"
-# args = ["$CODEX_HOME/harness-data/mcp_memory/server.py"]
+# args = ["${HARNESS_DATA:-$HOME/.claude}/mcp_memory/server.py"]
 # required = true
 # ---------------------------------------------------------------------------

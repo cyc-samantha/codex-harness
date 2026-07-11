@@ -449,13 +449,13 @@ in CX-91 (Phase 6) since the doc does not confirm behavior above the default.
 
 | ID | Description | Deliverable(s) | Acceptance Criteria | Deps | Size | Owner |
 |---|---|---|---|---|---|---|
-| CX-20 | Author `.codex/agents/*.toml` for all ~20 roles | 20 TOML files | Each has required `name`/`description`/`develo
-| CX-21 | `scripts/codex-harness` entrypoint | Bash dispatcher (`pipeline start`, `pipeline resume`, `pipeline status`) | 
+| CX-20 | **DEFERRED — see §5 Phase 7.** Author `.codex/agents/*.toml` for all ~20 roles | 20 TOML files | Each has required `name`/`description`/`develo
+| CX-21 | **DEFERRED — see §5 Phase 7.** `scripts/codex-harness` entrypoint | Bash dispatcher (`pipeline start`, `pipeline resume`, `pipeline status`) | 
 | CX-22 | `scripts/lib/dispatch-agent.sh` | Worktree-create → `codex exec` → worktree-merge wrapper | Given a role + task-
 | CX-23 | `scripts/lib/verdict-parse.py` | Parses `--output-schema` JSON output into a verdict enum | Unit tests cover: we
-| CX-24 | Parallel Best-of-N dispatch | `scripts/lib/dispatch-bestofn.sh` | Spawns N `codex exec` invocations backgrounded
-| CX-25 | Phase-order state machine | `scripts/lib/phase-order.sh` | Encodes Plan → Plan Validation → Build (incl. code-re
-| CX-26 | Fix-engineer in-cycle rework loop | `scripts/lib/dispatch-fix.sh` | On non-passing verdict, re-dispatches the fi
+| CX-24 | **DEFERRED — see §5 Phase 7.** Parallel Best-of-N dispatch | `scripts/lib/dispatch-bestofn.sh` | Spawns N `codex exec` invocations backgrounded
+| CX-25 | **DEFERRED — see §5 Phase 7.** Phase-order state machine | `scripts/lib/phase-order.sh` | Encodes Plan → Plan Validation → Build (incl. code-re
+| CX-26 | **DEFERRED — see §5 Phase 7.** Fix-engineer in-cycle rework loop | `scripts/lib/dispatch-fix.sh` | On non-passing verdict, re-dispatches the fi
 | CX-27 | Reversibility escape hatches | `CODEX_HARNESS_DISABLE_*` env-var checks in each `scripts/lib/*.sh` | Each escape
 
 
@@ -502,6 +502,35 @@ in CX-91 (Phase 6) since the doc does not confirm behavior above the default.
 | CX-61 | Cross-harness eval comparison | `eval/runs/{run-id}/report.md` for both harnesses on the same case set | Report 
 | CX-90 | Probe: per-agent tool-scoping equivalent | Written probe result (RED/GREEN) | Confirms or refutes whether `mcp_s
 | CX-91 | Probe: per-call wall-clock cap equivalent | Written probe result | Confirms or refutes any Codex-native per-agen
+
+
+### Phase 7 — Contractor Handoff (strategy pivot, 2026-07-11)
+
+The maintainer decided codex-harness will NOT be a full port of the
+Claude harness's orchestration layer. Codex is a fallback **contractor**
+used only when the Claude harness's 5-hour usage window runs out; Claude
+remains primary and does the vast majority of pipeline work. The core
+deliverable of this pivot is **shared runtime state**: both harnesses
+point at ONE data root (`${HARNESS_DATA:-$HOME/.claude}`, the Claude
+harness's live runtime dir — see AGENTS.md § Runtime Model) so
+`pipeline-state/`, learning observations, and eval baselines are visible
+to whichever side is on shift, with no sync step. A `HANDOFF.md` contract
+plus an `ACTIVE_HARNESS` baton file (`pipeline-state/HANDOFF-CONTRACT.md`)
+coordinate the shift change. The Claude side gains a matching `/handoff`
+skill in a separate repo, added in parallel. Because Codex is now a
+single-thread contractor rather than an independent orchestrator, the
+full `scripts/codex-harness` dispatch layer (worktree-create →
+parallel-`codex exec` → verdict-parse → phase-order state machine) is
+no longer required to hit the goal — the Phase 2 rows that built that
+layer (CX-20, CX-21, CX-24, CX-25, CX-26) are downgraded to
+deferred/optional and superseded by this phase's thinner kit.
+
+| ID | Description | Deliverable(s) | Acceptance Criteria | Deps | Size | Owner |
+|---|---|---|---|---|---|---|
+| CX-70 | Shared `HARNESS_DATA` root | `AGENTS.md` § Runtime Model updated; `.codex/config.toml` memory-server comment updated | Default runtime-state root is `${HARNESS_DATA:-$HOME/.claude}`, matching the Claude harness's `$CLAUDE_PLUGIN_DATA` default; seed-vs-runtime split language preserved; no remaining `$CODEX_HOME/harness-data` state-path reference in AGENTS.md | none | S | — |
+| CX-71 | `HANDOFF.md` contract + `ACTIVE_HARNESS` baton | `pipeline-state/HANDOFF-CONTRACT.md` | Documents the full `HANDOFF.md` v1 frontmatter + section schema, the `ACTIVE_HARNESS` single-line baton format, and the reconcile-against-git rule; cross-references the Claude-side `/handoff` counterpart | CX-70 | S | — |
+| CX-72 | `harness-resume-handoff` skill | `.agents/skills/harness-resume-handoff/SKILL.md` | Checks the baton before reading any `HANDOFF.md`; finds newest `baton: codex` handoff; reconciles against git/tests before trusting prose; continues `Next Actions` vertically (no subagent dispatch); wraps with a return `HANDOFF.md` (`baton: claude`) + baton flip; verdict block covers RESUMED/NO_BATON/NOTHING_TO_RESUME/STATE_DIVERGED | CX-71 | S | — |
+| CX-73 | `source: codex` observation tagging | Documented in `pipeline-state/HANDOFF-CONTRACT.md` § Observation tagging; enforced by `harness-resume-handoff` Step 5 | Every observation the Codex side appends carries `"source": "codex"`; Claude-authored records may omit the field (defaults to `claude`) | CX-71, CX-72 | S | — |
 
 
 ---

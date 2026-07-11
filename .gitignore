@@ -4,6 +4,7 @@
 # Runtime state — never committed (see AGENTS.md § Runtime State)
 pipeline-state/*
 !pipeline-state/README.md
+!pipeline-state/HANDOFF-CONTRACT.md
 
 # Local scratch
 *.local
