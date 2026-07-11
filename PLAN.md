@@ -451,34 +451,46 @@ in CX-91 (Phase 6) since the doc does not confirm behavior above the default.
 |---|---|---|---|---|---|---|
 | CX-20 | **DEFERRED — see §5 Phase 7.** Author `.codex/agents/*.toml` for all ~20 roles | 20 TOML files | Each has required `name`/`description`/`develo
 | CX-21 | **DEFERRED — see §5 Phase 7.** `scripts/codex-harness` entrypoint | Bash dispatcher (`pipeline start`, `pipeline resume`, `pipeline status`) | 
-| CX-22 | `scripts/lib/dispatch-agent.sh` | Worktree-create → `codex exec` → worktree-merge wrapper | Given a role + task-
-| CX-23 | `scripts/lib/verdict-parse.py` | Parses `--output-schema` JSON output into a verdict enum | Unit tests cover: we
+| CX-22 | **DEFERRED — see §5 Phase 7.** `scripts/lib/dispatch-agent.sh` | Worktree-create → `codex exec` → worktree-merge wrapper | Given a role + task-
+| CX-23 | **DEFERRED — see §5 Phase 7.** `scripts/lib/verdict-parse.py` | Parses `--output-schema` JSON output into a verdict enum | Unit tests cover: we
 | CX-24 | **DEFERRED — see §5 Phase 7.** Parallel Best-of-N dispatch | `scripts/lib/dispatch-bestofn.sh` | Spawns N `codex exec` invocations backgrounded
 | CX-25 | **DEFERRED — see §5 Phase 7.** Phase-order state machine | `scripts/lib/phase-order.sh` | Encodes Plan → Plan Validation → Build (incl. code-re
 | CX-26 | **DEFERRED — see §5 Phase 7.** Fix-engineer in-cycle rework loop | `scripts/lib/dispatch-fix.sh` | On non-passing verdict, re-dispatches the fi
-| CX-27 | Reversibility escape hatches | `CODEX_HARNESS_DISABLE_*` env-var checks in each `scripts/lib/*.sh` | Each escape
+| CX-27 | **DEFERRED — see §5 Phase 7.** Reversibility escape hatches | `CODEX_HARNESS_DISABLE_*` env-var checks in each `scripts/lib/*.sh` | Each escape
 
 
 ### Phase 3 — Memory + Learning
 
+> **RE-SCOPED by the Phase 7 pivot (CX-70).** The shared
+> `${HARNESS_DATA:-$HOME/.claude}` root IS the Claude harness's live
+> runtime dir, which already contains the real `mcp_memory/server.py`,
+> `recall`, `capture`, instincts, and session-memory. Porting copies into
+> this repo would create exactly the "second synced copy" the handoff
+> contract forbids. The `memory/` and `learning/instincts/` placeholder
+> trees are removed in Phase 8 (CX-83).
 
 | ID | Description | Deliverable(s) | Acceptance Criteria | Deps | Size | Owner |
 |---|---|---|---|---|---|---|
-| CX-30 | Port `reindex-memory`, `recall`, `capture`, `mcp_memory` | `memory/` subtree, unchanged Python | `python3 memory
-| CX-31 | Register `mcp_memory` in `config.toml` | `[mcp_servers.memory]` entry | `required = true`; smoke test per `codex
-| CX-32 | Port `learn` skill (10-step procedure) | `.agents/skills/harness-learn/SKILL.md` | All 10 steps present (bootstr
-| CX-33 | `scripts/lib/instinct-inject.py` | Port of `hooks/_lib/instinct_loader.py` resolver logic | Given a role + proje
-| CX-34 | Session-memory sub-file port | `scripts/lib/session-memory.sh` + `memory/session-memory/config/templates/*.md` |
+| CX-30 | **SUPERSEDED by CX-70 (shared root) — the live subsystem is used in place, no port.** Port `reindex-memory`, `recall`, `capture`, `mcp_memory` | `memory/` subtree, unchanged Python | `python3 memory
+| CX-31 | **RE-SCOPED by CX-70 — `config.toml` registers the Claude-side server at `${HARNESS_DATA}/mcp_memory/server.py`; no local `memory/mcp_memory/` is created.** Register `mcp_memory` in `config.toml` | `[mcp_servers.memory]` entry | `required = true`; smoke test per `codex
+| CX-32 | **SUPERSEDED by CX-73 — the contractor only appends `source: codex` observations; Claude, as primary, runs learn.** Port `learn` skill (10-step procedure) | `.agents/skills/harness-learn/SKILL.md` | All 10 steps present (bootstr
+| CX-33 | **DEFERRED — see §5 Phase 7 (only served the dispatch layer's prompt assembly).** `scripts/lib/instinct-inject.py` | Port of `hooks/_lib/instinct_loader.py` resolver logic | Given a role + proje
+| CX-34 | **DEFERRED — see §5 Phase 7 (shared root already carries the live session-memory).** Session-memory sub-file port | `scripts/lib/session-memory.sh` + `memory/session-memory/config/templates/*.md` |
 
 
 ### Phase 4 — Eval
 
+> **SUPERSEDED by the Phase 7 pivot (CX-70).** Eval corpus, baselines, and
+> the run/score/capture machinery stay Claude-side in the shared root; the
+> contractor neither runs the internal eval nor keeps a second copy of its
+> data. The `eval/` placeholder tree is removed in Phase 8 (CX-83).
+> Cross-harness comparison (old CX-61) is dropped with the orchestrator.
 
 | ID | Description | Deliverable(s) | Acceptance Criteria | Deps | Size | Owner |
 |---|---|---|---|---|---|---|
-| CX-40 | Port `internal-eval` orchestration shell | `.agents/skills/harness-internal-eval/SKILL.md` + `eval/` dirs | `run
-| CX-41 | Swap per-case runner to `codex exec` | `eval/cases/*/run.sh` invokes `codex exec` instead of the Claude Agent to
-| CX-42 | Keep baseline file format identical | `eval/baselines/{date}-{model}.md` | Byte-for-byte same YAML frontmatter (
+| CX-40 | **SUPERSEDED by CX-70 (shared root).** Port `internal-eval` orchestration shell | `.agents/skills/harness-internal-eval/SKILL.md` + `eval/` dirs | `run
+| CX-41 | **SUPERSEDED by CX-70 (shared root).** Swap per-case runner to `codex exec` | `eval/cases/*/run.sh` invokes `codex exec` instead of the Claude Agent to
+| CX-42 | **SUPERSEDED by CX-70 (shared root) — there is only ONE baselines dir now, so format identity is trivially true.** Keep baseline file format identical | `eval/baselines/{date}-{model}.md` | Byte-for-byte same YAML frontmatter (
 
 
 ### Phase 5 — Enforcement Substitutes
@@ -498,8 +510,8 @@ in CX-91 (Phase 6) since the doc does not confirm behavior above the default.
 
 | ID | Description | Deliverable(s) | Acceptance Criteria | Deps | Size | Owner |
 |---|---|---|---|---|---|---|
-| CX-60 | End-to-end dry run: T5-equivalent feature pipeline | Recorded transcript / trace | A trivial feature request run
-| CX-61 | Cross-harness eval comparison | `eval/runs/{run-id}/report.md` for both harnesses on the same case set | Report 
+| CX-60 | **SUPERSEDED — presupposed the deferred orchestrator; replaced by CX-74 (handoff round-trip dry run).** End-to-end dry run: T5-equivalent feature pipeline | Recorded transcript / trace | A trivial feature request run
+| CX-61 | **SUPERSEDED — presupposed the deferred orchestrator; contractor-model validation is CX-74 instead.** Cross-harness eval comparison | `eval/runs/{run-id}/report.md` for both harnesses on the same case set | Report 
 | CX-90 | Probe: per-agent tool-scoping equivalent | Written probe result (RED/GREEN) | Confirms or refutes whether `mcp_s
 | CX-91 | Probe: per-call wall-clock cap equivalent | Written probe result | Confirms or refutes any Codex-native per-agen
 
@@ -522,8 +534,12 @@ single-thread contractor rather than an independent orchestrator, the
 full `scripts/codex-harness` dispatch layer (worktree-create →
 parallel-`codex exec` → verdict-parse → phase-order state machine) is
 no longer required to hit the goal — the Phase 2 rows that built that
-layer (CX-20, CX-21, CX-24, CX-25, CX-26) are downgraded to
-deferred/optional and superseded by this phase's thinner kit.
+layer (CX-20 through CX-27 — CX-22, CX-23, and CX-27 only ever served
+that layer too) are downgraded to deferred/optional and superseded by
+this phase's thinner kit. Net narrative: **Codex is the contractor,
+Claude is the general contractor** — the contractor needs the handoff
+kit, the engineering discipline, and the enforcement hooks, not the
+dispatch layer.
 
 | ID | Description | Deliverable(s) | Acceptance Criteria | Deps | Size | Owner |
 |---|---|---|---|---|---|---|
@@ -531,6 +547,46 @@ deferred/optional and superseded by this phase's thinner kit.
 | CX-71 | `HANDOFF.md` contract + `ACTIVE_HARNESS` baton | `pipeline-state/HANDOFF-CONTRACT.md` | Documents the full `HANDOFF.md` v1 frontmatter + section schema, the `ACTIVE_HARNESS` single-line baton format, and the reconcile-against-git rule; cross-references the Claude-side `/handoff` counterpart | CX-70 | S | — |
 | CX-72 | `harness-resume-handoff` skill | `.agents/skills/harness-resume-handoff/SKILL.md` | Checks the baton before reading any `HANDOFF.md`; finds newest `baton: codex` handoff; reconciles against git/tests before trusting prose; continues `Next Actions` vertically (no subagent dispatch); wraps with a return `HANDOFF.md` (`baton: claude`) + baton flip; verdict block covers RESUMED/NO_BATON/NOTHING_TO_RESUME/STATE_DIVERGED | CX-71 | S | — |
 | CX-73 | `source: codex` observation tagging | Documented in `pipeline-state/HANDOFF-CONTRACT.md` § Observation tagging; enforced by `harness-resume-handoff` Step 5 | Every observation the Codex side appends carries `"source": "codex"`; Claude-authored records may omit the field (defaults to `claude`) | CX-71, CX-72 | S | — |
+| CX-74 | Handoff round-trip dry run (replaces CX-60/CX-61 as the port's validation gate) | Recorded transcript + the `HANDOFF.md` pair (claude→codex→claude) | A real task started under the Claude harness hands off with `baton: codex`; Codex resumes via `harness-resume-handoff`, reconciles against git/tests before trusting prose, completes ≥1 `Next Actions` item vertically (single-thread, no subagent dispatch), appends a `source: codex` observation, and hands back with a return `HANDOFF.md` + baton flip to `claude`; the Claude side then resumes cleanly | CX-71, CX-72, CX-73 | S | — |
+
+
+### Phase 8 — Contractor Cull + Doc Reconciliation (2026-07-11)
+
+The Phase 7 pivot changed the goal; this phase makes the repo match it.
+Roughly 40 of the ~60 ported skills, the `.codex/agents/` role-team
+concept, the `memory/`/`learning/`/`eval/` port scaffolds, and large
+sections of `AGENTS.md` still describe the orchestrator-and-subagent
+architecture Phase 7 deferred. A contractor needs the handoff kit, the
+on-shift working discipline, and the enforcement hooks — not the dispatch
+layer. Forcing function: `.agents/skills/README.md` records an aggregate
+skill-description budget of 8,516 chars against Codex's 8,000-char
+fallback cap — the catalog is over budget today, so the cull is
+correctness, not just hygiene.
+
+**Keep (the contractor core)**: the handoff kit
+(`pipeline-state/HANDOFF-CONTRACT.md`, `pipeline-state/README.md`,
+`.agents/skills/harness-resume-handoff/` — this is now the product);
+~20 on-shift working-discipline skills (`build-implementation`,
+`bug-fix`, `refactor`, `debug`, `verify`, `polish`, `smell-scan`,
+`debt-ledger`, `tool-synthesis`, `pr-creation`, `changelog`, `deploy`,
+`deployment-verification`, `db-migration`, `web-frontend-patterns`,
+`react-native-patterns`, `accessibility-check`, `module-extraction`,
+`security-alert-fix`, `health-scan`, `tech-spike`); enforcement + config
+(`.codex/config.toml`, `.codex/hooks/TRUST.md`, `.codex/rules/`,
+`scripts/install-skills.sh` — the Iron Laws apply to whoever is on
+shift, so Phase 5 stays live); `AGENTS.md`, `PLAN.md`, `.gitattributes`,
+`.gitignore`, this repo's `.claude/CLAUDE.md`.
+
+| ID | Description | Deliverable(s) | Acceptance Criteria | Deps | Size | Owner |
+|---|---|---|---|---|---|---|
+| CX-80 | Remove dispatch/orchestrator skills (~15) | Delete `.agents/skills/`: `harness-pipeline`, `harness-intake`, `harness-batch-pipeline`, `harness-pipeline-resume` (superseded by `harness-resume-handoff`), `harness-workstream`, `harness-continuous-planning`, `harness-property-based-test`, `harness-sandbox-verify`, `harness-spec-blind-validate`, `harness-patch-critique`, `harness-product-acceptance`, `harness-plan-cache-lookup`, `harness-plan-self-validation`, `harness-spec-grounding` | No remaining skill body spawns an agent or drives phase order; the contractor entry point is `harness-resume-handoff` only | CX-72 | S | — |
+| CX-81 | Remove Claude-telemetry/maintenance skills | Delete `.agents/skills/`: `harness-eval-model-effectiveness` (20 Python files — the single biggest removal), `harness-cache-audit`, `harness-mutation-score-report`, `harness-forensics`, `harness-harness-audit`, `harness-harness-config`, `harness-internal-eval`, `harness-learn`; edit `pipeline-state/HANDOFF-CONTRACT.md` §124-129 to drop the "this repo's harness-learn port" reference (Codex only appends tagged observations; Claude runs learn) | These skills audit/tune the Claude harness's metrics and agent team, which the contractor neither generates nor tunes; contract text no longer references a local learn port | CX-73 | S | — |
+| CX-82 | Remove plan/greenfield-phase skills | Delete `.agents/skills/`: `harness-epic-breakdown`, `harness-story-writing`, `harness-estimation`, `harness-greenfield-scaffold`, `harness-creative-direction`, `harness-design-system-init`, `harness-project-setup` | Claude is primary and owns Plan; a contractor picking up mid-shift never starts an epic or a greenfield project, and works in repos Claude already set up | none | S | — |
+| CX-83 | Remove subsystem port scaffolds; fix stale gotcha | Delete `memory/` (all `.gitkeep` placeholders), `learning/instincts/`, `eval/{baselines,cases,suites}` placeholder trees; update `.claude/CLAUDE.md` Gotchas ("until CX-31… memory/mcp_memory/ exists" is stale — the MCP block points at `${HARNESS_DATA}/mcp_memory/server.py`, the Claude-side copy) | No placeholder subsystem tree remains; no doc claims a local memory/eval port is coming; `.codex/config.toml` comment and CLAUDE.md agree on the shared-root path | CX-70 | S | — |
+| CX-84 | Remove Phase-2 skeletons | Delete or stub `.codex/agents/` (README describes 20 role TOMLs from deferred CX-20 — replace with a one-line deferral note or delete the dir); remove `scripts/lib/.gitkeep` (CX-22/23 scripts and CX-27 escape hatches are deferred with the layer they served) | No empty scaffolding advertises the deferred dispatch layer | CX-80 | S | — |
+| CX-85 | Rewrite review skills as inline self-review | Rewrite `harness-code-review` + `harness-security-review`: keep the review checklists (the value), drop "spawn code-reviewer/security-engineer" bodies; both become single-thread self-review procedures the contractor runs inline | Neither skill references subagent dispatch; checklists preserved | CX-80 | S | — |
+| CX-86 | Rewrite `AGENTS.md` for the contractor model | Cut the Agent Team table (19 roles, all "TBD"), the T0-T6 Work-Class Routing section, and the orchestration-script-gated Pipeline Phase Order paragraph; rewrite § Runtime Model around the baton/`HANDOFF.md` flow (its opening still says `scripts/codex-harness` "ships in Phase 2, CX-21"); KEEP Iron Laws, code shape rules, worktree/commit protocol, and shared-root sections | A fresh Codex session reading only `AGENTS.md` gets the contractor model — no orphaned references to the orchestrator, the agent team, or T0-T6 routing | CX-80, CX-81, CX-82, CX-83, CX-84, CX-85 | M | — |
+| CX-87 | Regenerate skill catalog + re-measure budget | Regenerate `.agents/skills/README.md` after the cull; re-measure the aggregate description budget | Catalog lists only surviving skills; aggregate description budget ≤ 8,000 chars (was 8,516) | CX-80, CX-81, CX-82, CX-85 | S | — |
 
 
 ---
@@ -555,7 +611,7 @@ directly (not agent-invoked); **MERGED** = folded into another skill or into
 | `accessibility-check` | PROMPT | WCAG audit procedure — pure instructions, ports as-is. |
 | `api-scaffold` | PROMPT | Ports as-is. |
 | `batch-pipeline` | PROMPT | T3 mechanical-sweep dispatch target — ports as-is, references the phase-order state machine 
-| `best-of-n` | MERGED | Folds into `dispatch-bestofn.sh` (CX-24) — the parallel-rollout mechanics are orchestration-scrip
+| `best-of-n` | DROPPED | Was MERGED into `dispatch-bestofn.sh` (CX-24); flipped to DROPPED by the Phase 7 pivot — the dispatch script is deferred and will not exist, and heavy Build variants stay Claude-side. |
 | `bug-fix` | PROMPT | T4 dispatch target — ports as-is. |
 | `build-implementation` | PROMPT | Core Build-phase skill — Phase 1 priority (CX-11). |
 | `cache-audit` | PROMPT | Ports as-is. |
@@ -593,7 +649,7 @@ directly (not agent-invoked); **MERGED** = folded into another skill or into
 | `mutation-score-report` | PROMPT | Ports as-is; feeds the Law-1 CI backstop (§4). |
 | `observability-setup` | PROMPT | Ports as-is. |
 | `patch-critique` | PROMPT | Final-Gate skill — ports as-is. |
-| `pdr-rtv` | MERGED | Folds into `dispatch-bestofn.sh`'s tournament-mode sibling — same orchestration-script class as `be
+| `pdr-rtv` | DROPPED | Was MERGED into `dispatch-bestofn.sh`'s tournament-mode sibling; flipped to DROPPED by the Phase 7 pivot — same rationale as `best-of-n`. |
 | `pipeline` | PROMPT | Core orchestrator-facing skill — Phase 1 priority (CX-11), paired with `phase-order.sh` (CX-25). |
 | `pipeline-resume` | PROMPT | Ports as-is; reads the portable `pipeline-state/` contract directly. |
 | `plan-cache-lookup` | PROMPT | Ports as-is. |
@@ -628,14 +684,21 @@ directly (not agent-invoked); **MERGED** = folded into another skill or into
 | `workstream` | PROMPT | Ports as-is; the `pipeline-state/workstreams/{ws}/` layout carries over unchanged. |
 
 
-**Totals**: 77 source entries → 2 non-skill (README, `_deferred` dropped) → 2
-DROPPED (`design-qc`, `vlm-critic`, both VLM-dependent) + 1 DROPPED duplicate
-(`spec_grounding`) → **6 MERGED** into orchestration-script logic
-(`best-of-n`, `cache-flip-gate`, `debug-trace`, `pdr-rtv`,
+**Totals** (pre-pivot port decisions): 77 source entries → 2 non-skill
+(README, `_deferred` dropped) → 2 DROPPED (`design-qc`, `vlm-critic`, both
+VLM-dependent) + 1 DROPPED duplicate (`spec_grounding`) + 2 DROPPED by the
+Phase 7 pivot (`best-of-n`, `pdr-rtv`) → **4 MERGED** into
+orchestration-script/CI-gate logic (`cache-flip-gate`, `debug-trace`,
 `plan-cache-rollout-gate`, `swe-pruner-rollout-gate`) → **6 SCRIPT**
 (`_template`, `capture`, `cost-report`, `embedder`, `mcp_memory`,
 `recall`/`reindex-memory` counted together as the memory subsystem) → the
-remainder (**~62**) port as native Codex Skills essentially unchanged.
+remainder (**~62**) were ported as native Codex Skills.
+
+**Post-pivot note**: this catalog records the original port decisions and
+is kept as history. The surviving set after the Phase 8 cull (CX-80..87)
+is roughly **20 contractor-core skills** — the keep-list in §5 Phase 8 is
+the SSOT for what remains; a PROMPT row here does NOT mean the skill
+survives the cull.
 
 
 ---
@@ -701,31 +764,41 @@ remainder (**~62**) port as native Codex Skills essentially unchanged.
 ## 8. Definition of Done (for the port itself)
 
 
+Revised 2026-07-11 for the Phase 7 contractor model: Codex is the
+contractor, Claude is the general contractor. "Done" no longer means the
+full-port phases complete — it means the contractor kit is complete and
+proven by a real shift change.
+
+
 The codex-harness port is DONE when ALL of the following hold:
 
 
-- Phases 0-5 (CX-01 through CX-54) are complete with passing acceptance
-  criteria as stated in §5.
-- CX-60 (end-to-end T5-equivalent dry run) completes Plan → Build → Review →
-  Ship on a trivial feature with no phase skipped, mirroring Iron Law 5's
-  intent even though enforcement is script-level only (per §4).
-- CX-61 (cross-harness eval comparison) produces a report showing the
-  codex-harness case-pass-rate is within an agreed tolerance of the Claude
-  harness's baseline on the SAME case set — not necessarily equal (different
-  model families are expected to diverge somewhat), but not catastrophically
-  worse.
+- Phase 0 (CX-01..04), Phase 1's surviving surface, Phase 5 (CX-50..54),
+  Phase 7 (CX-70..74), and Phase 8 (CX-80..87) are complete with passing
+  acceptance criteria as stated in §5. Phases 2-4 and CX-60/CX-61 are
+  deferred or superseded per their per-phase notes and are NOT
+  DoD-blocking.
+- CX-74 (handoff round-trip dry run) completes claude → codex → claude on
+  a real task: baton honoured before any `HANDOFF.md` is trusted, state
+  reconciled against git/tests, ≥1 Next Action worked vertically
+  single-thread, a `source: codex` observation appended, and a clean
+  return handoff the Claude side resumes from.
 - Every §2 table row has a fidelity rating and, for anything below FULL, an
   explicit substitution mechanism or DROPPED rationale — no silent gaps.
 - Every §4 Iron Law has a stated Codex enforcement status — no law silently
-  omitted from the transcription.
-- `AGENTS.md` stands alone: a fresh Codex session reading only `AGENTS.md` (no
-  chased file references) can state the phase order, the Iron Laws, the code
-  shape rules, and the worktree/commit protocol without needing to open
-  `PLAN.md` or any other file.
-- CX-90 and CX-91 probes are run and their results (RED or GREEN) are recorded
-  — even a RED result satisfies "not silently deferred," per the source
-  harness's own Iron Law 6 spirit applied to this planning artifact.
+  omitted from the transcription. (The Iron Laws apply to whoever is on
+  shift — the hooks port stays live under the contractor model.)
+- `AGENTS.md` stands alone: a fresh Codex session reading only `AGENTS.md`
+  (no chased file references) can state the Iron Laws, the code shape
+  rules, the worktree/commit protocol, and the baton/`HANDOFF.md` runtime
+  model — with no orphaned references to the agent team, T0-T6 routing, or
+  the deferred orchestration script (CX-86).
+- `.agents/skills/README.md` lists only surviving skills and its aggregate
+  description budget is ≤ 8,000 chars (CX-87).
+- CX-90 and CX-91 probes are deferred alongside the dispatch layer they
+  would inform; if that layer is ever revived, they run and record RED or
+  GREEN before anything depends on them — not silently skipped.
 - The Risks & Known Losses section (§7) is reviewed by a human before the
-  first production pipeline run on codex-harness — this is a plan-review gate,
+  first production shift on codex-harness — this is a plan-review gate,
   not a mechanically-checkable one.
 
