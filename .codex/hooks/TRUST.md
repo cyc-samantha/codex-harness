@@ -79,12 +79,17 @@ scripts that source them): `harness-paths.sh`, `main-branch-detect.sh`,
 **Upstream-drift risk.** `main-branch-detect-regex.sh` was vendored verbatim
 from the source Claude harness (`~/.claude/hooks/_lib/`) but has since
 DIVERGED: this port adds `_mbd_strip_leading_wrappers` to close a
-`command`/`env`/`nice`/`nohup`/`time`/`stdbuf` wrapper-bypass gap
-(security-review round 1) that the upstream file does not have. A future
-re-sync of this file from the source harness (manual copy, `cp`, or a
-sync script) will silently reopen the bypass unless the stripping step is
-re-applied. The file carries a `DIVERGENCE NOTE` comment at its top for
-exactly this reason — read it before touching the file.
+`command`/`env`/`nice`/`nohup`/`time`/`stdbuf`/`timeout` wrapper-bypass gap
+(security-review rounds 1-2) that the upstream file does not have. Round 2
+replaced an attached-flag-only regex with a token-scan that drops every
+token up to the first bare `git`/`gh` — this also closes `env`'s
+`KEY=VALUE`/`-i` forms and separate-arg wrapper flags (`nice -n 10`,
+`stdbuf -o 0`) and mandatory positional args (`timeout 5`) with no
+remaining known gap in this class of bypass. A future re-sync of this file
+from the source harness (manual copy, `cp`, or a sync script) will silently
+reopen the bypass unless the stripping step is re-applied. The file carries
+a `DIVERGENCE NOTE` comment at its top for exactly this reason — read it
+before touching the file.
 
 ## Schema assumptions (conservative, flagged for CX-90 probe)
 

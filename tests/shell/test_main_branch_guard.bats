@@ -42,6 +42,42 @@ setup() { GUARD="${HOOKS_DIR}/main-branch-guard.sh"; }
   [ "$status" -eq 2 ]
 }
 
+@test "blocks 'nice -n 10 git checkout' wrapper bypass (separate-arg flag)" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "nice -n 10 git checkout -b topic")' | '$GUARD'"
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks 'stdbuf -o 0 git checkout' wrapper bypass (separate-arg flag)" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "stdbuf -o 0 git checkout -b topic")' | '$GUARD'"
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks 'timeout 5 git checkout' wrapper bypass (mandatory positional arg)" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "timeout 5 git checkout -b topic")' | '$GUARD'"
+  [ "$status" -eq 2 ]
+}
+
+@test "allows 'git -C <worktree> checkout' delegation form under a wrapper" {
+  make_repo_with_worktree
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "nice -n 10 git -C $WORKTREE_DIR checkout -b topic")' | '$GUARD'"
+  [ "$status" -eq 0 ]
+}
+
+@test "blocks 'env -i VAR=x git checkout' (KEY=VALUE + -i wrapper form)" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "env -i VAR=x git checkout -b topic")' | '$GUARD'"
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks 'env VAR=x git checkout' (bare KEY=VALUE wrapper form)" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "env VAR=x git checkout -b topic")' | '$GUARD'"
+  [ "$status" -eq 2 ]
+}
+
 # --- Iron Law 8: fail-closed on unevaluable input ---
 
 @test "fail-closed: blocks an empty payload" {
