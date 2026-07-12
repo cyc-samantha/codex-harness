@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["-c", "h=\"${CODEX_PROJECT_ROOT:-$PWD}/.codex/hooks/main-branch-guard.sh\"; [ -x \"$h\" ] && exec \"$h\" || exit 0"],
+            "args": ["-c", "h=\"${CODEX_PROJECT_ROOT:-$PWD}/.codex/hooks/main-branch-guard.sh\"; if [ -x \"$h\" ]; then exec \"$h\"; else echo \"WARNING: main-branch-guard.sh missing or not executable ($h) -- main-branch invariant enforcement is INERT this session (Iron Law 8 / TRUST.md Verification).\" >&2; exit 0; fi"],
             "timeout": 10000
           }
         ]

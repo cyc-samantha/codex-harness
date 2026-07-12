@@ -38,6 +38,24 @@ landed — the main-branch guard must block it. If it does not, hooks are not
 trusted (or not registered) and NO pipeline work should proceed: a gate that
 cannot evaluate fails closed (Iron Law 8).
 
+**Fail-open vs fail-closed, distinguished.** The `hooks.json` launcher itself
+is intentionally fail-open on ONE narrow condition: `main-branch-guard.sh`
+absent from disk or not executable (`[ -x "$h" ]` false). That is a
+*script-availability* check, not a command-evaluability check — it exists so
+a partially-broken checkout doesn't brick every tool call. It now prints a
+loud `WARNING: ... enforcement is INERT this session` to stderr before
+`exit 0` (previously silent — the exact gap this section originally warned
+about). This is DIFFERENT from the guard SCRIPT's own behaviour once it does
+run: `main-branch-guard.sh` fails CLOSED (`exit 2`) on an unevaluable
+payload — empty stdin, non-JSON — per Iron Law 8. In short: missing/non-
+executable script → loud fail-open (a deployment defect, now visible);
+present-but-can't-parse-input → fail-closed (a security property). If you
+ever see the launcher warning, the executable bit regression this file's
+"regression pin" bats test (`tests/shell/test_exec_bit.bats`) exists to
+catch has likely resurfaced — treat it as a P0 and re-run
+`git update-index --chmod=+x .codex/hooks/*.sh` (top-level executed scripts
+only; `_lib/*.sh` are sourced, not executed, and stay 100644).
+
 ## Registered hooks (Phase 5 — CX-50, CX-51, CX-53)
 
 `.codex/hooks/hooks.json` registers these command hooks. Review each script
@@ -57,6 +75,16 @@ Vendored helpers under `.codex/hooks/_lib/` (also reviewed by trusting the
 scripts that source them): `harness-paths.sh`, `main-branch-detect.sh`,
 `main-branch-detect-regex.sh`, `destructive-verb-detect.sh`,
 `destructive-verbs.txt`, `check-bypass-gate.sh`.
+
+**Upstream-drift risk.** `main-branch-detect-regex.sh` was vendored verbatim
+from the source Claude harness (`~/.claude/hooks/_lib/`) but has since
+DIVERGED: this port adds `_mbd_strip_leading_wrappers` to close a
+`command`/`env`/`nice`/`nohup`/`time`/`stdbuf` wrapper-bypass gap
+(security-review round 1) that the upstream file does not have. A future
+re-sync of this file from the source harness (manual copy, `cp`, or a
+sync script) will silently reopen the bypass unless the stripping step is
+re-applied. The file carries a `DIVERGENCE NOTE` comment at its top for
+exactly this reason — read it before touching the file.
 
 ## Schema assumptions (conservative, flagged for CX-90 probe)
 
@@ -87,3 +115,15 @@ relying on the enforcement layer:
 The SessionStart maintenance hooks honour both the cross-harness
 `CLAUDE_DISABLE_*` and the Codex-native `CODEX_HARNESS_DISABLE_*` bypass vars:
 `*_WORKTREE_REAPER`, `*_LEARNING_GC`. Set either to `1` to short-circuit.
+
+`CLAUDE_DESTRUCTIVE_VERBS_FILE` (read by `_lib/destructive-verb-detect.sh`)
+overrides the path `is_destructive_command` loads its verb patterns from.
+It is a legitimate escape for testing (point it at a fixture file) but is
+also a full bypass surface: pointing it at `/dev/null` or any file with no
+matching patterns makes `is_destructive_command` never match, so
+`main-branch-guard.sh` never asks for the
+`CLAUDE_DESTRUCTIVE_CONFIRM`/`CLAUDE_DESTRUCTIVE_CONFIRM_TS` confirmation
+token before a destructive verb runs. This was previously undocumented.
+Treat any session with `CLAUDE_DESTRUCTIVE_VERBS_FILE` set to a
+non-standard path with the same suspicion as one with the confirmation
+token pre-set.

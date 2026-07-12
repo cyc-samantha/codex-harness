@@ -28,6 +28,20 @@ setup() { GUARD="${HOOKS_DIR}/main-branch-guard.sh"; }
   [ "$status" -eq 0 ]
 }
 
+# --- wrapper-bypass hardening (security-review MEDIUM finding) ---
+
+@test "blocks 'command git checkout' wrapper bypass at repo root" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "command git checkout -b topic")' | '$GUARD'"
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks 'env git checkout' wrapper bypass at repo root" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "env git checkout -b topic")' | '$GUARD'"
+  [ "$status" -eq 2 ]
+}
+
 # --- Iron Law 8: fail-closed on unevaluable input ---
 
 @test "fail-closed: blocks an empty payload" {

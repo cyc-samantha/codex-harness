@@ -218,7 +218,7 @@ is_forbidden_clause() {
       return 0
     fi
   fi
-  norm=$(_mbd_normalize "$clause")
+  norm=$(_mbd_normalize "$(_mbd_strip_leading_wrappers "$clause")")
   [[ "$norm" =~ $(_mbd_forbidden_re) ]] || return 1
   _mbd_is_safe_fetch "$norm" && return 1
   _mbd_is_safe_pull "$norm" && return 1
