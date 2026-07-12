@@ -1,0 +1,32 @@
+name: harness-gate
+
+# CX-54 — CI-Green merge gate. Runs the enforcement-hook test suite on any PR
+# that touches the enforcement surface. Dependency-light: ubuntu-latest + bats
+# (from apt) + jq + git, no language toolchain.
+
+on:
+  pull_request:
+    paths:
+      - ".codex/hooks/**"
+      - ".codex/rules/**"
+      - ".agents/skills/**"
+      - "tests/shell/**"
+      - ".github/workflows/harness-gate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  hook-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bats and jq
+        run: sudo apt-get update && sudo apt-get install -y bats jq
+
+      - name: Verify hooks.json is valid JSON
+        run: jq -e . .codex/hooks/hooks.json > /dev/null
+
+      - name: Run enforcement-hook test suite
+        run: bats tests/shell/

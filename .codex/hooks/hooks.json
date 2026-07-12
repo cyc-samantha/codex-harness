@@ -1,0 +1,66 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": ["-c", "h=\"${CODEX_PROJECT_ROOT:-$PWD}/.codex/hooks/main-branch-guard.sh\"; [ -x \"$h\" ] && exec \"$h\" || exit 0"],
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": ["-c", "h=\"${CODEX_PROJECT_ROOT:-$PWD}/.codex/hooks/code-shape-check.sh\"; [ -x \"$h\" ] && exec \"$h\" || exit 0"],
+            "timeout": 10000
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": ["-c", "h=\"${CODEX_PROJECT_ROOT:-$PWD}/.codex/hooks/function-body-check.sh\"; [ -x \"$h\" ] && exec \"$h\" || exit 0"],
+            "timeout": 10000
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": ["-c", "h=\"${CODEX_PROJECT_ROOT:-$PWD}/.codex/hooks/comment-smell-check.sh\"; [ -x \"$h\" ] && exec \"$h\" || exit 0"],
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": ["-c", "h=\"${CODEX_PROJECT_ROOT:-$PWD}/.codex/hooks/worktree-reaper.sh\"; [ -x \"$h\" ] && exec \"$h\" || exit 0"],
+            "timeout": 30000
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": ["-c", "h=\"${CODEX_PROJECT_ROOT:-$PWD}/.codex/hooks/learning-gc.sh\"; [ -x \"$h\" ] && exec \"$h\" || exit 0"],
+            "timeout": 30000
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": ["-c", "h=\"${CODEX_PROJECT_ROOT:-$PWD}/.codex/hooks/codebase-map-rebuild.sh\"; [ -x \"$h\" ] && exec \"$h\" || exit 0"],
+            "timeout": 30000
+          }
+        ]
+      }
+    ]
+  }
+}
