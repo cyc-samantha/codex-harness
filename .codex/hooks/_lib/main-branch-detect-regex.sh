@@ -5,8 +5,9 @@
 # DIVERGENCE NOTE (CX-50, security-review rounds 1-2): this file was vendored
 # verbatim from /home/samanthachen/git/.claude/hooks/_lib/ at port time. The
 # `_mbd_strip_leading_wrappers` token-scan below (command/env/nice/nohup/
-# time/stdbuf/timeout) does NOT exist upstream — it closes a wrapper-bypass
-# gap found only in this port, including separate-arg wrapper flags
+# time/stdbuf/timeout/setsid/ionice/chrt/taskset/flock/sudo/doas) does NOT
+# exist upstream — it closes a wrapper-bypass gap found only in this port,
+# including separate-arg wrapper flags
 # (`nice -n 10`, `stdbuf -o 0`) and mandatory positional args (`timeout 5`).
 # Do NOT re-sync this file from the source harness without re-applying that
 # stripping step, or the bypass reopens. See TRUST.md Reversibility escapes /
@@ -34,8 +35,9 @@ _mbd_cd_prefix_re() {
 # becomes visible to _mbd_forbidden_re.
 #
 # Token-scan (not a flag-shape regex): once the first token is a known
-# wrapper verb, every token up to and including the first bare `git`/`gh`
-# token is dropped. This is deliberately flag-shape-agnostic — it handles
+# wrapper verb, every token up to but not including the first bare
+# `git`/`gh` token is dropped (the git/gh token itself is kept). This is
+# deliberately flag-shape-agnostic — it handles
 # attached flags (`nice -n10`), space-separated flag VALUES (`nice -n 10`,
 # `stdbuf -o 0`), mandatory positional args (`timeout 5`), and `env`'s
 # `KEY=VALUE`/`-i` forms uniformly, without enumerating each wrapper's CLI
@@ -51,7 +53,7 @@ _mbd_strip_leading_wrappers() {
   local -a tokens
   read -r -a tokens <<< "$body"
   [[ "${#tokens[@]}" -eq 0 ]] && { printf '%s' "$cmd"; return; }
-  [[ "${tokens[0]}" =~ ^(command|env|nice|nohup|time|stdbuf|timeout)$ ]] || { printf '%s' "$cmd"; return; }
+  [[ "${tokens[0]}" =~ ^(command|env|nice|nohup|time|stdbuf|timeout|setsid|ionice|chrt|taskset|flock|sudo|doas)$ ]] || { printf '%s' "$cmd"; return; }
   local i=0
   while (( i < ${#tokens[@]} )); do
     [[ "${tokens[$i]}" == "git" || "${tokens[$i]}" == "gh" ]] && break

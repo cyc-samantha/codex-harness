@@ -66,6 +66,24 @@ setup() { GUARD="${HOOKS_DIR}/main-branch-guard.sh"; }
   [ "$status" -eq 0 ]
 }
 
+# --- wrapper + git -C composition (security-review round 3 CRITICAL) ---
+# A wrapper prefix must not skip git -C worktree validation: the wrapper
+# must be stripped BEFORE git -C detection, not after.
+
+@test "blocks 'nice git -C <REPO_ROOT> checkout' (wrapper hides REPO_ROOT target)" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "nice git -C $REPO_DIR checkout main")' | '$GUARD'"
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks 'command git -C <unregistered-path> checkout' (wrapper hides unregistered target)" {
+  make_repo
+  local unregistered; unregistered="$(cxh_mktemp_dir)"
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "command git -C $unregistered checkout -b evil main")' | '$GUARD'"
+  rm -rf "$unregistered"
+  [ "$status" -eq 2 ]
+}
+
 @test "blocks 'env -i VAR=x git checkout' (KEY=VALUE + -i wrapper form)" {
   make_repo
   run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "env -i VAR=x git checkout -b topic")' | '$GUARD'"
@@ -76,6 +94,29 @@ setup() { GUARD="${HOOKS_DIR}/main-branch-guard.sh"; }
   make_repo
   run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "env VAR=x git checkout -b topic")' | '$GUARD'"
   [ "$status" -eq 2 ]
+}
+
+# --- wrapper allow-list completeness (code-review round 3 CRITICAL) ---
+# setsid/ionice/chrt/taskset/flock/sudo/doas are unprivileged (or
+# privilege-adjacent) exec-passthrough wrappers in the same class as
+# nice/timeout/stdbuf and must be stripped identically.
+
+@test "blocks 'setsid git checkout main' wrapper bypass" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "setsid git checkout main")' | '$GUARD'"
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks 'sudo git checkout main' wrapper bypass" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "sudo git checkout main")' | '$GUARD'"
+  [ "$status" -eq 2 ]
+}
+
+@test "allows 'setsid git status' under new wrapper (no over-reach)" {
+  make_repo
+  run bash -c "cd '$REPO_DIR' && printf '%s' '$(payload_bash "setsid git status")' | '$GUARD'"
+  [ "$status" -eq 0 ]
 }
 
 # --- Iron Law 8: fail-closed on unevaluable input ---

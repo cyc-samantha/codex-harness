@@ -204,6 +204,13 @@ _mbd_target_is_valid_worktree() {
 
 is_forbidden_clause() {
   local clause="$1" norm git_c_target=""
+  # Strip leading wrapper tokens (command/env/nice/.../timeout) FIRST — every
+  # downstream check (wrapper_re, git -C detection/validation, forbidden_re,
+  # the safe-form carve-outs) is anchored or target-extracting and must see
+  # the unwrapped clause. A wrapper token left in place pushes `git` off the
+  # `^` anchor these checks rely on, silently skipping git -C worktree
+  # validation (security-review round 3 CRITICAL).
+  clause=$(_mbd_strip_leading_wrappers "$clause")
   [[ "$clause" =~ $(_mbd_wrapper_re) ]] && return 0
   # Detect git -C <path> prefix; extract target and strip before normalization.
   # Cache regex once — _mbd_git_c_prefix_re uses [[:space:]] which matches tabs,
@@ -218,7 +225,7 @@ is_forbidden_clause() {
       return 0
     fi
   fi
-  norm=$(_mbd_normalize "$(_mbd_strip_leading_wrappers "$clause")")
+  norm=$(_mbd_normalize "$clause")
   [[ "$norm" =~ $(_mbd_forbidden_re) ]] || return 1
   _mbd_is_safe_fetch "$norm" && return 1
   _mbd_is_safe_pull "$norm" && return 1

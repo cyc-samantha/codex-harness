@@ -79,17 +79,42 @@ scripts that source them): `harness-paths.sh`, `main-branch-detect.sh`,
 **Upstream-drift risk.** `main-branch-detect-regex.sh` was vendored verbatim
 from the source Claude harness (`~/.claude/hooks/_lib/`) but has since
 DIVERGED: this port adds `_mbd_strip_leading_wrappers` to close a
-`command`/`env`/`nice`/`nohup`/`time`/`stdbuf`/`timeout` wrapper-bypass gap
-(security-review rounds 1-2) that the upstream file does not have. Round 2
-replaced an attached-flag-only regex with a token-scan that drops every
-token up to the first bare `git`/`gh` — this also closes `env`'s
-`KEY=VALUE`/`-i` forms and separate-arg wrapper flags (`nice -n 10`,
-`stdbuf -o 0`) and mandatory positional args (`timeout 5`) with no
-remaining known gap in this class of bypass. A future re-sync of this file
-from the source harness (manual copy, `cp`, or a sync script) will silently
-reopen the bypass unless the stripping step is re-applied. The file carries
-a `DIVERGENCE NOTE` comment at its top for exactly this reason — read it
+wrapper-bypass gap (security-review rounds 1-2; code-review round 3) that
+the upstream file does not have. Round 2 replaced an attached-flag-only
+regex with a token-scan that drops every token up to the first bare
+`git`/`gh` — this also closes `env`'s `KEY=VALUE`/`-i` forms and
+separate-arg wrapper flags (`nice -n 10`, `stdbuf -o 0`) and mandatory
+positional args (`timeout 5`). A future re-sync of this file from the
+source harness (manual copy, `cp`, or a sync script) will silently reopen
+the bypass unless the stripping step is re-applied. The file carries a
+`DIVERGENCE NOTE` comment at its top for exactly this reason — read it
 before touching the file.
+
+**Wrapper detection is an enumerated allow-list, not exhaustive coverage.**
+`_mbd_strip_leading_wrappers` only strips a fixed, named set of leading
+tokens — currently `command`, `env`, `nice`, `nohup`, `time`, `stdbuf`,
+`timeout`, `setsid`, `ionice`, `chrt`, `taskset`, `flock`, `sudo`, `doas`
+(code-review round 3 added the last seven after live probes confirmed
+`setsid git checkout main` and `sudo git checkout main` bypassed the
+guard). Any unprivileged exec-passthrough wrapper NOT on this list will
+push the git verb off the anchored patterns and bypass detection the same
+way. This is defense-in-depth, not a claim of completeness — new wrapper
+binaries can appear at any time. Known boundaries in the same class,
+carried forward from code-review round 3 and intentionally NOT fixed here
+(pre-existing, out of scope, shell-parsing-completeness problems a regex
+hook cannot fully solve):
+
+- **Leading-backslash alias escape.** `\git checkout main` is allowed
+  because the leading backslash pushes `git` off the anchor; under a
+  wrapper, `nice \git checkout main` empties the stripped command entirely.
+- **Quote-unaware clause splitter.** `split_clauses` splits on `;`/`&&`/`|`
+  without honouring quotes, so `git commit -m "fix; git checkout main"` is
+  wrongly BLOCKED (false positive on a mutating verb inside a quoted commit
+  message).
+
+`.rules` and human review remain the backstop for whatever this enumerated
+list and the regex grammar cannot express — never treat this file as the
+sole enforcement layer.
 
 ## Schema assumptions (conservative, flagged for CX-90 probe)
 
