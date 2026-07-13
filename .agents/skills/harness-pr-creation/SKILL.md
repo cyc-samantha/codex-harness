@@ -2,7 +2,6 @@
 name: "pr-creation"
 description: "Use when user wants to ship a feature: GitHub pull request workflow with validation, feature branch management, and automated PR creation."
 context: fork
-agent: software-engineer
 argument-hint: "Optional: PR title or 'auto' to derive from commit messages"
 ---
 
@@ -272,14 +271,16 @@ EOF
 
 The eval-baseline stamp is appended to every PR body so reviewers see the latest suite pass rate + `harness_ref` SHA without per-PR reruns. See `~/.claude/skills/internal-eval/score/stamp-pr-body.sh`.
 
-### 5b. Watch remote CI (Monitor event-stream — enforcing gate is pipeline/SKILL.md Step 5)
+### 5b. Watch remote CI (Monitor event-stream — this skill's own CI-green gate)
 
-After `PR_CREATED`, the orchestrator runs an advisory CI-watch before proceeding to
+After `PR_CREATED`, run an advisory CI-watch yourself before proceeding to
 the cost annotator. This sub-phase drives the in-cycle fix loop on RED and emits
 `watch-skipped:operator-cancel` on operator interruption. It subscribes to a Monitor
-event-stream for results — this CI-watch is advisory (not a blocking gate). The enforcing
-CI-green gate is at `skills/pipeline/SKILL.md` Step 5 (Deploy entry), which blocks
-`Ship→Deploy` on any non-conclusively-green status.
+event-stream for results — the subscription itself is advisory (not a blocking gate).
+The enforcing CI-green gate is `ci_status_decision(PR)` (`hooks/_lib/ci-status-reader.sh`,
+invoked in the GREEN/RED path logic below) — it blocks `Ship→Deploy` on any
+non-conclusively-green status. There is no separate pipeline-phase gate on the
+Codex side; this skill carries its own enforcement end to end.
 
 **Arm the event-stream subscription:**
 
@@ -360,26 +361,25 @@ next poll-interval tick. Re-entry latency drops from poll-interval to time-of-fa
 **Operator cancel escape hatch:**
 
 If the operator cancels within the notify window or interrupts the subscription
-mid-flight (e.g. known CI flake, persistent fix-engineer stall loop), the orchestrator
-emits:
+mid-flight (e.g. known CI flake, a stalled fix loop), emit:
 
 ```
 CI status: watch-skipped:operator-cancel
 ```
 
 with an explicit note: "CI status unverified — the advisory watch did not confirm
-a CI conclusion. NOTE: the enforcing CI-green gate at `skills/pipeline/SKILL.md`
-Step 5 runs next and will BLOCK Ship→Deploy unless CI is conclusively green (or
-the operator sets `CLAUDE_CI_GREEN_GATE=off`). Cancelling the watch does not
-bypass the gate."
+a CI conclusion. NOTE: the enforcing CI-green gate (`ci_status_decision(PR)`, this
+skill's own § 5b GREEN/RED path logic) runs next and will BLOCK Ship→Deploy unless
+CI is conclusively green (or the operator sets `CLAUDE_CI_GREEN_GATE=off`).
+Cancelling the watch does not bypass the gate."
 
 **Unreadable / no-runs path:**
 
 If `gh pr checks` returns no runs or errors, or the decoder exits 2 for every event
 line, emit `CI status: watch-skipped:<reason>` and proceed. `watch-skipped` leaves
-CI status unverified for the advisory watch; the enforcing CI-green gate at
-`skills/pipeline/SKILL.md` Step 5 then BLOCKs Ship→Deploy on unreadable/non-green
-status.
+CI status unverified for the advisory watch; the enforcing CI-green gate
+(`ci_status_decision(PR)`, this skill's own § 5b GREEN/RED path logic) then BLOCKs
+Ship→Deploy on unreadable/non-green status.
 
 ### 6. Annotate PR cost on CI-green
 
@@ -515,7 +515,7 @@ This skill only creates PRs; it does not merge them. It adds a `## Merge Order` 
 - **PR_CREATED**: PR URL returned, quality gate hook passed. Advisory CI-watch (Step 5b) follows.
 - **PR_BLOCKED**: Quality gate failed. Fix issues and retry.
 - **CI_GREEN**: All `gh pr checks` runs concluded SUCCESS against the pushed headRefOid; CI-green gate passed — proceed to cost annotator (Step 6) then Deploy.
-- **CI_RED**: ≥1 `gh pr checks` run concluded FAILURE (or CI status unreadable); pull `--log-failed`, re-enter in-cycle fix loop, verify `git ls-remote` == claimed SHA, re-arm watch. The enforcing CI-green gate at pipeline/SKILL.md Step 5 HALTS Ship→Deploy until CI is conclusively green.
+- **CI_RED**: ≥1 `gh pr checks` run concluded FAILURE (or CI status unreadable); pull `--log-failed`, re-enter in-cycle fix loop, verify `git ls-remote` == claimed SHA, re-arm watch. The enforcing CI-green gate (`ci_status_decision(PR)`, this skill's own § 5b GREEN/RED path logic) HALTS Ship→Deploy until CI is conclusively green.
 
 ## Phase Output
 

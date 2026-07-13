@@ -2,7 +2,6 @@
 name: "polish"
 description: "Use when user wants to Lightweight mechanical cleanup pass between Build and Review."
 context: fork
-agent: software-engineer
 model: haiku
 ---
 

@@ -2,7 +2,6 @@
 name: "bug-fix"
 description: "Root cause analysis workflow with incremental TDD for bug fixes. Covers reproduce, analyze, regression test, fix, verify, and prevent."
 context: fork
-agent: software-engineer
 argument-hint: "Bug description and reproduction steps"
 ---
 

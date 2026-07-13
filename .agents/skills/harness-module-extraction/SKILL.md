@@ -2,7 +2,6 @@
 name: "module-extraction"
 description: "Use when user wants to extract a bounded context into an in-process module with an explicit public port (same repo, no new process or deploy unit)."
 context: fork
-agent: software-engineer
 argument-hint: "What to extract into a module (e.g., 'extract billing into a module with an explicit port')"
 ---
 

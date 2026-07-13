@@ -11,17 +11,17 @@ argument-hint: "List of changed file paths (one per line or space-separated)"
 
 ## When to Invoke
 
-Invoked by the **code-reviewer agent** at the Build code-review step — analogous to how the security-engineer invokes `/harness:skill-security-lint`. Findings flow into the code-reviewer's output as an advisory section, never a separate gate. May also be invoked manually.
+Run this yourself during your own `$harness-code-review` inline self-review pass — there is no separate code-reviewer agent to invoke it on your behalf. Findings feed into that same self-review as an advisory section, never a separate gate. May also be invoked standalone/manually.
 
-- **Diff touches source files**: invoke to sweep changed source files for architectural smells before the SOLID/DRY rubric runs.
+- **Diff touches source files**: run it to sweep changed source files for architectural smells before the SOLID/DRY rubric runs.
 - **Do NOT invoke on config or doc changes**: skip invocation when the diff contains only `*.md`, `*.json`, `*.yaml`, `*.toml`, or lock files — filter these out first (see § Input Contract).
-- **Advisory only**: never hard-blocks the pipeline. The code-reviewer decides whether a finding warrants a CHANGES_REQUESTED verdict.
+- **Advisory only**: never hard-blocks anything. You decide whether a finding warrants a CHANGES_REQUESTED verdict in your `$harness-code-review` pass.
 
 ## Inputs
 
-- **Changed file list**: one file path per entry; passed by the code-reviewer from the branch diff.
-- **Filesystem**: the actual changed files, readable by the agent.
-- **No prior phase verdict required**: this is a utility sub-scan called from within the Build code-review step.
+- **Changed file list**: one file path per entry; gather it yourself from the branch diff (`git diff main...HEAD --name-only`).
+- **Filesystem**: the actual changed files, readable in this session.
+- **No prior phase verdict required**: this is a utility sub-scan you run yourself as part of your own code-review step.
 
 ## Input Contract
 

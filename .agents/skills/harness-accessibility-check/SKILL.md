@@ -3,9 +3,7 @@ name: "accessibility-check"
 description: "Run axe-core against changed routes and gate on WCAG 2.1 AA violations. Run this yourself after frontend build work."
 verdict: "A11Y_CHECK_PASSED / A11Y_CHECK_FAILED / A11Y_CHECK_SKIPPED"
 phase: "utility"
-dispatch: "subagent"
-context: fork
-agent: qa-engineer
+dispatch: "skill-tool"
 ---
 
 # Accessibility Check

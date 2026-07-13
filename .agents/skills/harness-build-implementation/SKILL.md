@@ -2,7 +2,6 @@
 name: "build-implementation"
 description: "Structured Build-phase TDD implementation: RED-GREEN-REFACTOR per slice, mutation kill loop. Use when implementing acceptance criteria after a plan is approved."
 context: fork
-agent: software-engineer
 argument-hint: "Acceptance criteria or story to implement"
 ---
 

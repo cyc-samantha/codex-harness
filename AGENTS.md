@@ -62,9 +62,19 @@ native "pipeline phase verdict gate" primitive and no orchestrator process
 of its own — under the contractor model, laws that the Claude harness
 enforces via its orchestrator/agent-team layer become **self-enforced
 discipline**: the single contractor session applies them directly, backed
-where possible by the native `command`-type hooks in `.codex/hooks/`
-(ported in Phase 5, CX-50..54 — see § Non-LLM Gates on Destructive Verbs
-and § Code Shape Rules below for the hooks that exist today).
+where possible by the native `command`-type hooks in `.codex/hooks/` that
+ship together with this playbook as the Phase 5 enforcement change
+(CX-50..54 — see § Non-LLM Gates on Destructive Verbs and § Code Shape
+Rules below for the hook inventory).
+
+**Presence check before trusting any "ENFORCED" claim below**: this
+playbook and the Phase 5 hooks are designed to land together, but if you
+are reading this `AGENTS.md` in a tree where `.codex/hooks/main-branch-guard.sh`
+(and the other hooks named below) are physically absent, treat every
+"ENFORCED" status below as **not currently active** — apply the described
+discipline manually and do not assume a guard will catch you. Check with
+`ls .codex/hooks/main-branch-guard.sh` before relying on any hook-backed
+claim in this section.
 
 1. **NO ACCEPTANCE CRITERION SHIPS WITHOUT (a) a failing-then-passing test
    for that AC in the diff and (b) mutation score ≥ 70% on changed lines.**
@@ -96,10 +106,14 @@ and § Code Shape Rules below for the hooks that exist today).
    PIPELINE RUN.** All HEAD-mutating git commands run via worktree
    delegation. Claude status: `[ENFORCED]` (`hooks/main-branch-guard.sh`,
    `PreToolUse`, blocks bare `git checkout`/`switch`/`reset --hard`/`merge`/
-   `rebase`/`gh pr create`). Codex status: **ENFORCED** — this is the
-   strongest native-hook parity point in the whole port, because Codex's
+   `rebase`/`gh pr create`). Codex status: **ENFORCED WHEN THE PHASE 5 HOOK
+   IS PRESENT** (verify with `ls .codex/hooks/main-branch-guard.sh` — see the
+   presence check note above § Iron Laws) — this is the strongest
+   native-hook parity point in the whole port, because Codex's
    `PreToolUse` `command`-type hooks genuinely block (`exit`-code semantics
-   confirmed), same as Claude's. Substitution mechanism:
+   confirmed), same as Claude's, once the hook is actually in the tree.
+   If it is absent, this law is **ASPIRATIONAL, self-enforced** like the
+   others above — apply the discipline manually. Substitution mechanism:
    `.codex/hooks/main-branch-guard.sh`, a `PreToolUse:Bash` entry in
    `.codex/hooks/hooks.json` (Phase 5, CX-50), plus
    `.codex/rules/harness-destructive.rules` `prefix_rule` defense-in-depth
@@ -189,9 +203,11 @@ and § Code Shape Rules below for the hooks that exist today).
     coercing.
 
 **Summary of what strengthens vs weakens under Codex.** Law 4 (main-branch
-invariant) is the strongest native-hook parity point, because it is a
-deterministic, exit-2-on-violation check that Codex's `PreToolUse`
-`command` hooks genuinely block on, same as Claude's. Laws 1, 2, 5, 6, 7, 9,
+invariant) is the strongest native-hook parity point WHEN the Phase 5 hook
+is present in the tree, because it is a deterministic, exit-2-on-violation
+check that Codex's `PreToolUse` `command` hooks genuinely block on, same
+as Claude's — absent the hook, treat it as self-enforced like everything
+else here. Laws 1, 2, 5, 6, 7, 9,
 10, 11, 13 are self-enforced-only because Codex has no pipeline-phase or
 verdict-gate primitive and no orchestrator process to run one — a
 single-thread contractor applies the discipline directly rather than
@@ -208,10 +224,14 @@ Deterministic, non-LLM enforcement — these hooks block on argv shape
 alone, before any model reasoning happens, and they exist precisely
 because an LLM-blessed destructive command is not a safe enough gate on
 its own (the PocketOS Apr 27 2026 incident this gate closes: a destructive
-command shipped without a non-LLM confirmation step). Shipped in Phase 5
-(CX-50..54) as native Codex `command`-type hooks — registered in
-`.codex/hooks/hooks.json` and co-existing in this repo alongside
-everything CX-80..87 removed:
+command shipped without a non-LLM confirmation step). These ship as the
+Phase 5 enforcement change (CX-50..54), registered as native Codex
+`command`-type hooks in `.codex/hooks/hooks.json`, designed to land in
+the same tree as this playbook and the CX-80..87 cull. **If any hook
+below is missing from `.codex/hooks/` in the tree you are actually in,
+it is not yet merged here — the table describes the intended, designed
+enforcement surface, not a guaranteed-present one. Check before relying
+on it; if absent, apply the corresponding discipline manually.**
 
 | Hook | Event | What it blocks |
 |---|---|---|
@@ -268,7 +288,11 @@ verb confirmation-token protocol above).
 
 ## Code Shape Rules
 
-Every code-touching session enforces continuously.
+Every code-touching session enforces continuously. The hook citations
+below are presence-conditional, same caveat as § Non-LLM Gates on
+Destructive Verbs — if `.codex/hooks/code-shape-check.sh` etc. are
+absent from your tree, these are self-enforced discipline, not a
+hook-backed guarantee.
 
 - **Naming is the primary cohesion gate:** can't name a unit without "and"
   → split; can't give an extract an honest name → do NOT extract.

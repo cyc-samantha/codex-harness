@@ -3,7 +3,6 @@ disable-model-invocation: true
 name: "deployment-verification"
 description: "Use when user wants to Post-deploy verification: health checks, smoke tests against live URL, error rate monitoring, automatic rollback trigger."
 context: fork
-agent: infrastructure-engineer
 argument-hint: "Deployed URL and environment (e.g., 'https://staging.app.com staging')"
 ---
 
@@ -93,9 +92,11 @@ On AUTO_ROLLBACK:
 
 On every terminal path, print the `[Deploy]` marker so the `hooks/deploy-outcome-audit.sh`
 PostToolUse hook can parse and persist the `deploy_outcome` record automatically.
-The `AUTO_ROLLBACK` marker supersedes any earlier `DEPLOYED` record from `/harness:deploy`
+The `AUTO_ROLLBACK` marker supersedes any earlier `DEPLOYED` record from `$harness-deploy`
 for the same `pipeline_id` — the consumer keeps only the MAX-timestamp record per
-`pipeline_id` (see `skills/learn/SKILL.md` Step 7c-bis). Emission is automatic via
+`pipeline_id` (the Claude side's `/harness:learn` step that reads this ledger is
+documented on that side; this repo does not carry its own `learn` port — see
+`pipeline-state/HANDOFF-CONTRACT.md` § Observation tagging). Emission is automatic via
 `hooks/deploy-outcome-audit.sh`; no manual heredoc or bash step is required.
 
 Record schema (for reference; the hook handles persistence):

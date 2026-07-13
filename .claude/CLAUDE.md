@@ -9,10 +9,13 @@ worktree/commit protocol).
 
 ## Commands
 
-- **Test**: `bats tests/shell/` — the enforcement-hook suite (Phase 5,
-  CX-50..54). Requires `bats` and `jq` on PATH. CI runs the same command via
+- **Test**: `bats tests/shell/` once the Phase 5 enforcement change
+  (CX-50..54) is present in your tree — it and this playbook are designed
+  to land together, but check `ls tests/shell/` before assuming it's
+  there. Requires `bats` and `jq` on PATH. CI runs the same command via
   `.github/workflows/harness-gate.yml` on PRs touching `.codex/hooks/**`,
-  `.codex/rules/**`, `.agents/skills/**`, or `tests/shell/**`.
+  `.codex/rules/**`, `.agents/skills/**`, or `tests/shell/**`, once that
+  workflow file exists in your tree.
 - **Lint/Build/Dev server**: n/a — this is a bash/Python/TOML/markdown
   harness repo, not an application
 

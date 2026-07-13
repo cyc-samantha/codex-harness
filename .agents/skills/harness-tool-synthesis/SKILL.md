@@ -2,7 +2,6 @@
 name: "tool-synthesis"
 description: "Use when standard tools can't do the job and a one-shot scratch tool would help (codebase-specific search, AST analyzer, repo-specific linter)."
 context: fork
-agent: software-engineer
 argument-hint: "Description of the gap a scratch tool would fill"
 ---
 
@@ -29,7 +28,7 @@ If a built-in tool (Grep, Glob, Read, Bash one-liner) covers it, USE IT — do n
 
 ### Promotability Gate
 
-If the synthesised tool's signature (name + one-line description + invocation pattern) would be **reusable across pipelines** (not just this task's accidental shape), record that explicitly in the scratchpad with `promotable: true`. The `/harness:learn` skill scans observations for this marker; when the same tool signature appears in ≥3 pipelines it generates a permanent skill scaffold for human review (see `skills/learn/SKILL.md`). Use the verdict `TOOL_SYNTHESISED_PROMOTABLE` instead of `TOOL_SYNTHESISED` when this is the case.
+If the synthesised tool's signature (name + one-line description + invocation pattern) would be **reusable across pipelines** (not just this task's accidental shape), record that explicitly in the scratchpad with `promotable: true`. On the Claude side, `/harness:learn` scans observations for this marker; when the same tool signature appears in ≥3 pipelines it generates a permanent skill scaffold for human review (that scan/scaffold machinery is not ported into this repo — see § What This Skill Does above for the promotion path from here). Use the verdict `TOOL_SYNTHESISED_PROMOTABLE` instead of `TOOL_SYNTHESISED` when this is the case.
 
 Promotability heuristics (each "yes" raises the score):
 
@@ -53,7 +52,7 @@ Scratch tools MUST NOT:
 - Modify code outside the worktree
 - Hit the network without explicit user authorisation
 - Persist beyond the current pipeline run
-- Be promoted to a "real" tool without going through `/harness:skill-builder` and full review
+- Be promoted to a "real" tool without a full human/Claude-side review — this repo carries no skill-builder skill of its own (see Step 5/Verdict below)
 
 ## Procedure
 
@@ -131,14 +130,14 @@ Before signalling BUILD_COMPLETE:
 .agents/skills/harness-tool-synthesis/lib/register.sh --cleanup ${WORKTREE}
 ```
 
-This removes the entire `.claude-scratch-tools/` directory. If the tool proved generally useful, propose it through `/harness:skill-builder` as a real, reviewed addition — do not smuggle scratch tools into `main`.
+This removes the entire `.claude-scratch-tools/` directory. If the tool proved generally useful, propose it as a real, reviewed addition in a `HANDOFF.md` note for Claude (which has a skill-builder skill on its side) or open the case to the user directly — do not smuggle scratch tools into `main`.
 
 The `.gitignore` rule is the safety net: even if cleanup is skipped, `git status` shows nothing under `.claude-scratch-tools/` and the merge cannot carry the directory.
 
 ## Verdict
 
-- **TOOL_SYNTHESISED**: tool registered, used, and either (a) cleaned up or (b) flagged for promotion via `/harness:skill-builder`.
-- **TOOL_SYNTHESISED_PROMOTABLE**: same as `TOOL_SYNTHESISED` plus the tool's signature is reusable across pipelines. The `/harness:learn` skill picks this up and counts cross-pipeline recurrences; on the third occurrence it scaffolds a permanent skill at `skills/<tool-name>/SKILL.md` (from `skills/_template/`) and surfaces it for human review. The scratch tool is still cleaned up from the worktree — the permanent scaffold is the path forward, not a smuggled scratch tool.
+- **TOOL_SYNTHESISED**: tool registered, used, and either (a) cleaned up or (b) flagged for promotion in a handoff note (see Step 5).
+- **TOOL_SYNTHESISED_PROMOTABLE**: same as `TOOL_SYNTHESISED` plus the tool's signature is reusable across pipelines. On the Claude side, `/harness:learn` picks this up (via `source: codex` observations you append per `pipeline-state/HANDOFF-CONTRACT.md`), counts cross-pipeline recurrences, and — on the third occurrence — scaffolds a permanent skill from its own `skills/_template/` for human review. This repo does not carry that promotion machinery itself; the scratch tool is still cleaned up from the worktree either way — the permanent scaffold (built on the Claude side) is the path forward, not a smuggled scratch tool.
 - **TOOL_UNNECESSARY**: built-in tools cover the operation; no synthesis performed.
 
 ## Phase Output
@@ -175,7 +174,7 @@ The empirical lift is conditional on three properties this skill enforces:
 
 1. **Per-worktree isolation** — scratch tools never leak to `main` (`.gitignore` + cleanup gate).
 2. **Auditability** — `registry.json` records every synthesis decision so reviewers can challenge the tool's existence.
-3. **Promotion path** — useful tools graduate via `/harness:skill-builder` and `/harness:learn` (the TOOL_SYNTHESISED_PROMOTABLE → permanent-skill scaffold), so reusable patterns harden into the harness instead of disappearing with the worktree.
+3. **Promotion path** — useful tools graduate via a handoff note to Claude (which runs `/harness:skill-builder` and `/harness:learn` on its side — the TOOL_SYNTHESISED_PROMOTABLE → permanent-skill scaffold), so reusable patterns harden into the harness instead of disappearing with the worktree.
 
 Without those three guards, scratch-tool synthesis becomes a way to smuggle untested code into production. With them, it is a controlled inference-time capability that has an empirical track record.
 $ARGUMENTS

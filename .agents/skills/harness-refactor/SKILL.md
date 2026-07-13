@@ -2,7 +2,6 @@
 name: "refactor"
 description: "Use when user wants to Safe refactoring workflow: identify smell, write characterization tests, refactor in small steps, verify green after each."
 context: fork
-agent: software-engineer
 argument-hint: "Code smell and target files"
 ---
 

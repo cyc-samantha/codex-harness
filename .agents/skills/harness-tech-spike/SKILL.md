@@ -2,7 +2,6 @@
 name: "tech-spike"
 description: "Use when user wants to Time-boxed technical research workflow: question, explore, prototype, findings, recommendation."
 context: fork
-agent: architect
 argument-hint: "Technical question to investigate"
 ---
 
@@ -86,7 +85,7 @@ Build a minimal proof-of-concept for the top 1-2 options:
 
 ```
 Verdict: SPIKE_COMPLETE (informational — no gate)
-Next: Depends on recommendation. Typically /harness:build-implementation or /harness:epic-breakdown.
+Next: Depends on recommendation. If the next step is implementation, run $harness-build-implementation yourself. If it needs breaking down into stories/epics first, this repo has no epic-breakdown skill — hand back to Claude for planning.
 Artifacts: [findings doc with recommendation, prototype code (throwaway)]
 ```
 $ARGUMENTS

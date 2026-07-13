@@ -2,7 +2,6 @@
 name: "verify"
 description: "Use when user wants to Structured verification workflow: contract tests, smoke tests, mutation testing."
 context: fork
-agent: software-engineer
 verdict: VERIFIED|VERIFIED_WITH_SKIP|UNVERIFIED|E2E_SKIP_NO_ENV
 ---
 
@@ -189,7 +188,7 @@ Tier 4 can run in parallel with Tier 3 (they are independent). Multi-target: mob
 
    **Local E2E Stack Lifecycle (web target only — local-only, no cloud fallback per `protocols/e2e-protocol.md`):**
 
-   1. **Discovery** — at `$PROJECT_ROOT`, look for (in order): `docker-compose.e2e.yml` → `docker-compose.e2e.yaml` → `docker-compose.yml` (only if it declares an `e2e` profile). First hit wins. None found → web status = SKIP, reason `no-e2e-compose-file`. Fix is `/harness:infra-scaffold` (which now emits this file for web projects) — never reach for a cloud preview.
+   1. **Discovery** — at `$PROJECT_ROOT`, look for (in order): `docker-compose.e2e.yml` → `docker-compose.e2e.yaml` → `docker-compose.yml` (only if it declares an `e2e` profile). First hit wins. None found → web status = SKIP, reason `no-e2e-compose-file`. This repo has no infra-scaffold skill to generate the compose file — hand back to Claude (or the user) to add one; never reach for a cloud preview.
    2. **Runtime check** — `docker info >/dev/null 2>&1`. Non-zero → web status = SKIP, reason `docker-runtime-unavailable`. Surface "Docker Desktop / OrbStack / colima not running" in the verify report so the user has an unambiguous fix path.
    3. **Bring up** — `docker compose -f "$COMPOSE_FILE" -p "e2e-${CLAUDE_PIPELINE_TASK_ID}" up -d --wait` (project-name namespaced so parallel slices don't collide; `--wait` blocks until all healthchecks pass).
    4. **Resolve baseURL** — read the app service's mapped host port via `docker compose -p "e2e-${CLAUDE_PIPELINE_TASK_ID}" port <app-service> <container-port>` (use dynamic port mapping in the compose file to avoid host-port conflicts across pipelines). Export as `PLAYWRIGHT_BASE_URL` / `CYPRESS_BASE_URL` for the driver.
@@ -219,7 +218,7 @@ Tier 4 can run in parallel with Tier 3 (they are independent). Multi-target: mob
    - Any target = SKIP and no FAILs → VERIFIED_WITH_SKIP
    - All fired targets = PASS → VERIFIED
    - All N/A → VERIFIED
-   - **Side-channel emit (independent of composite)**: when Tier 4 web target status = `SKIP`, additionally emit `E2E_SKIP_NO_ENV` (info-level, per `protocols/verdict-catalog.md`). This does NOT change the composite verdict — it travels alongside it so the Final Gate summary can render the loud yellow line and the product-reviewer can acknowledge.
+   - **Side-channel emit (independent of composite)**: when Tier 4 web target status = `SKIP`, additionally emit `E2E_SKIP_NO_ENV` (info-level, per `protocols/verdict-catalog.md`). This does NOT change the composite verdict — it travels alongside the report so the loud yellow line is visible in the PR/HANDOFF.md, not silently swallowed.
 
 6. **First-fire release note**: on first web-target fire for a project (no prior `$state_dir/{task_id}/scratchpad/qa-engineer-verify-screenshots/` history), emit one line in the verify report: "Web E2E gating now active because <reason>".
 
@@ -324,10 +323,10 @@ The verifier MUST write `$state_dir/{task-id}/verification-evidence.json` at the
 
 **Verdict semantics**:
 - **VERIFIED** — Tier 3 (≥70% rule-based) AND Tier 3.5 (≥60% LLM-mutant) both PASS (or both N/A per the tier matrix). Tier 4 fired and PASSED (or all N/A). **AND Tier 5 PASSED where an oracle applies (or N/A when none applies).** Oracle-match is required for VERIFIED whenever a known-good external comparator exists for the change.
-- **VERIFIED_WITH_SKIP** — at least one tier was SKIP (Tier 3.5 SKIP on Claude-call failure; Tier 4 SKIP per E2E protocol prerequisites unmet; Tier 5 SKIP when an oracle applies but execution failed) AND no tier FAILED. Tier 5 = N/A (no oracle applies) does NOT cause VERIFIED_WITH_SKIP — it leaves the composite verdict unaffected. Product-reviewer must acknowledge any SKIP in the Accept phase.
+- **VERIFIED_WITH_SKIP** — at least one tier was SKIP (Tier 3.5 SKIP on Claude-call failure; Tier 4 SKIP per E2E protocol prerequisites unmet; Tier 5 SKIP when an oracle applies but execution failed) AND no tier FAILED. Tier 5 = N/A (no oracle applies) does NOT cause VERIFIED_WITH_SKIP — it leaves the composite verdict unaffected. Call out any SKIP explicitly (PR body / HANDOFF.md) so it isn't silently swallowed.
 - **UNVERIFIED** — any tier FAILED. Slice returns to Build with the failing tier's evidence (surviving-mutant list, failing E2E flows, **oracle divergence list**) as targeted gaps.
 
-[If VERIFIED_WITH_SKIP: name which tier was SKIP and why -- product-reviewer must acknowledge]
+[If VERIFIED_WITH_SKIP: name which tier was SKIP and why -- call this out explicitly in the PR/HANDOFF.md]
 [If UNVERIFIED: which tier failed and why]
 ```
 
@@ -339,9 +338,8 @@ The verifier MUST write `$state_dir/{task-id}/verification-evidence.json` at the
 
 ```
 Verdict: VERIFIED / VERIFIED_WITH_SKIP / UNVERIFIED
-Next: If VERIFIED → /harness:qa-test-strategy
-      If VERIFIED_WITH_SKIP → /harness:qa-test-strategy (product-reviewer must acknowledge skip in Accept phase)
-      If UNVERIFIED → return to Build phase to fix failing tiers, then re-review
+Next: If VERIFIED or VERIFIED_WITH_SKIP → proceed to ship/handoff yourself (this repo has no separate QA-strategy or product-acceptance skill — note any SKIP explicitly in the PR/HANDOFF.md so a human or Claude sees it before merge)
+      If UNVERIFIED → return to Build to fix failing tiers, then re-run your own review pass
 Tier results: Tier 1: [PASS/FAIL] | Tier 2: [PASS/FAIL] | Tier 3: [PASS/FAIL/N/A] | Tier 3.5: [PASS/FAIL/SKIP/N/A] | Tier 4: [PASS/FAIL/SKIP/N/A] | Tier 5: [PASS/FAIL/SKIP/N/A]
 Side-channel verdict: E2E_SKIP_NO_ENV emitted when Tier 4 web = SKIP (acknowledge required at Accept).
 Agent summaries: [verification summary]
