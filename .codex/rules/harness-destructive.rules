@@ -1,0 +1,48 @@
+# harness-destructive.rules — CX-52
+#
+# EXPERIMENTAL DEFENSE-IN-DEPTH, NEVER THE SOLE ENFORCEMENT LAYER.
+# Codex `.rules` / `prefix_rule` are explicitly marked experimental by OpenAI
+# ("Rules are experimental and may change"). These entries mirror the verb list
+# the main-branch-guard.sh hook (CX-50) blocks, plus the destructive-verb gate
+# ported in .codex/hooks/_lib/destructive-verbs.txt. They exist ONLY as a second,
+# coarse layer behind that hook — the hook does the precise, context-aware
+# matching (delegation-prefix carve-outs, worktree validation, --ff-only /
+# pathspec / safe-pull exceptions, the confirmation-token TTL). prefix_rule can
+# only match an argv prefix, so it CANNOT express "…only when the target is
+# main" or "…unless delegated to a registered worktree" — it forbids the whole
+# verb. Do not rely on this file alone; if it is ever removed the hook still
+# enforces. See PLAN.md §7 Risks (".rules is explicitly experimental").
+#
+# Precise semantics, carve-outs, and the confirmation-token protocol live in
+# AGENTS.md § Iron Laws (Main-Branch Invariant / Non-LLM Gates on Destructive
+# Verbs). This file is a mirror, not the source of truth.
+
+# --- HEAD-mutating git verbs (Iron Law 4 companion) ---
+# The hook allows delegated forms (git -C <wt> …, cd <wt> && …); prefix_rule
+# cannot, so these are advisory-forbidden and the hook admits the safe forms.
+prefix_rule(pattern=["git", "checkout"], decision="forbidden")
+prefix_rule(pattern=["git", "switch"], decision="forbidden")
+prefix_rule(pattern=["git", "reset", "--hard"], decision="forbidden")
+prefix_rule(pattern=["git", "merge"], decision="forbidden")
+prefix_rule(pattern=["git", "rebase"], decision="forbidden")
+prefix_rule(pattern=["git", "update-ref", "refs/heads/main"], decision="forbidden")
+prefix_rule(pattern=["git", "symbolic-ref", "HEAD"], decision="forbidden")
+prefix_rule(pattern=["gh", "pr", "create"], decision="forbidden")
+
+# --- Destructive verbs (PocketOS Apr 27 2026 incident gate) ---
+# Volume / cloud storage / infra deletion.
+prefix_rule(pattern=["aws", "s3", "rb"], decision="forbidden")
+prefix_rule(pattern=["gcloud", "sql", "instances", "delete"], decision="forbidden")
+prefix_rule(pattern=["railway", "down"], decision="forbidden")
+prefix_rule(pattern=["fly", "destroy"], decision="forbidden")
+prefix_rule(pattern=["kubectl", "delete", "namespace"], decision="forbidden")
+
+# Filesystem destruction of the home tree.
+prefix_rule(pattern=["rm", "-rf", "~"], decision="forbidden")
+prefix_rule(pattern=["rm", "-rf", "$HOME"], decision="forbidden")
+
+# Force-push to protected destinations (coarse: any force-push is forbidden here;
+# the hook narrows this to main/master/release/production/staging/develop).
+prefix_rule(pattern=["git", "push", "--force"], decision="forbidden")
+prefix_rule(pattern=["git", "push", "--force-with-lease"], decision="forbidden")
+prefix_rule(pattern=["git", "push", "-f"], decision="forbidden")

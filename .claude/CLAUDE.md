@@ -9,8 +9,10 @@ worktree/commit protocol).
 
 ## Commands
 
-- **Test**: none yet — arrives with `scripts/lib/verdict-parse.py` unit
-  tests (CX-23) and hook tests (Phase 5)
+- **Test**: `bats tests/shell/` — the enforcement-hook suite (Phase 5,
+  CX-50..54). Requires `bats` and `jq` on PATH. CI runs the same command via
+  `.github/workflows/harness-gate.yml` on PRs touching `.codex/hooks/**`,
+  `.codex/rules/**`, `.agents/skills/**`, or `tests/shell/**`.
 - **Lint/Build/Dev server**: n/a — this is a bash/Python/TOML/markdown
   harness repo, not an application
 
