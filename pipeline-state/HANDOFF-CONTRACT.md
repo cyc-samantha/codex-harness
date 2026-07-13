@@ -122,11 +122,13 @@ format as the Claude harness's Iron Law 7 capture) gets an extra field:
 ```
 
 Claude-authored observation records may omit `source` entirely — the
-Claude harness's `/harness:learn` (and this repo's `harness-learn` port)
-treats a missing `source` field as `claude` by default. This lets the
-`/harness:learn` segmentation step weight or filter instincts by
-authoring harness (e.g. down-weight a pattern that only ever fired under
-Codex's tool surface before promoting it as a cross-harness instinct).
+Claude harness's `/harness:learn` treats a missing `source` field as
+`claude` by default. This repo does not carry its own `learn` port
+(Codex only appends tagged observations; Claude, as primary, runs
+`/harness:learn` on the shared log). This lets `/harness:learn`'s
+segmentation step weight or filter instincts by authoring harness (e.g.
+down-weight a pattern that only ever fired under Codex's tool surface
+before promoting it as a cross-harness instinct).
 
 Enforcement of this tag is a **skill procedure**, not a schema validator:
 `harness-resume-handoff` (see `.agents/skills/harness-resume-handoff/`)

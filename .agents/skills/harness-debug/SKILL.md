@@ -96,7 +96,7 @@ reproducer_artifact: {path: <path/to/assertflip-test>, red_evidence: <pre-fix RE
 For each debugging cycle:
 1. Review the hypothesis log — which hypothesis has the highest confidence?
 2. Design a test for the top hypothesis
-3. Spawn an engineer (worktree) to implement the test/fix
+3. In the same worktree, implement the test/fix yourself
 4. Record the result in the elimination log
 5. Update hypothesis confidence based on evidence
 6. If eliminated: mark status `eliminated`, move to next hypothesis
@@ -129,8 +129,8 @@ When the bug is fixed:
 ## Constraints
 
 - Maximum 5 fix-test iterations before escalating to user
-- Each fix still goes through an agent (orchestrator never edits source)
-- Pipeline gates (review, verify, test, accept) are SUSPENDED during the debug loop — they run once on the final working state
+- Every fix goes through the same TDD discipline as any other change (RED before GREEN)
+- Review/verify/test/accept steps are SUSPENDED during the debug loop — they run once on the final working state
 - Debug state file is the single source of truth — do not duplicate to memory
 
 ## Phase Output

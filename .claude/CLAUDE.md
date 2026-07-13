@@ -18,16 +18,16 @@ worktree/commit protocol).
 
 ## Architecture
 
-Layout per `PLAN.md` §3:
+Layout per `PLAN.md` §3 (as revised by the Phase 7 contractor pivot and the
+Phase 8 cull, CX-70..87):
 
 - `AGENTS.md` — merged CLAUDE.md + rules/core.md, Codex-native autoload
-- `.agents/skills/` — ported skill catalog (~62 dirs, Phase 1)
-- `.codex/` — `config.toml`, `agents/*.toml` (~20 roles), `hooks/`, `rules/`
-- `scripts/` — `codex-harness` orchestration entrypoint + `lib/` (Phase 2)
-- `memory/`, `learning/instincts/`, `eval/` — Python-stdlib subsystems
-  (Phases 3-4)
-- `pipeline-state/` — portable per-task state contract (runtime content
-  gitignored)
+- `.agents/skills/` — ported skill catalog (~24 contractor-core dirs)
+- `.codex/` — `config.toml`, `hooks/`, `rules/` (no `agents/*.toml` role
+  team — Codex is a single-thread contractor, not an orchestrator)
+- `scripts/` — `install-skills.sh` only (no dispatch layer)
+- `pipeline-state/` — portable per-task state contract, including the
+  `HANDOFF-CONTRACT.md` baton protocol (runtime content gitignored)
 
 ## Service Context
 
@@ -35,9 +35,10 @@ Layout per `PLAN.md` §3:
 - **Upstream**: OpenAI Codex CLI (consumer), source harness at `~/.claude`
   (port origin)
 - **Downstream**: none
-- **Contracts**: `pipeline-state/` markdown contract, `eval/baselines/`
-  report format — both kept byte-identical to the Claude harness for
-  cross-harness portability
+- **Contracts**: `pipeline-state/` markdown contract — including
+  `HANDOFF-CONTRACT.md` — kept byte-identical to the Claude harness for
+  cross-harness portability; runtime state (memory, eval, learning) lives
+  in the shared `${HARNESS_DATA:-$HOME/.claude}` root, not a local copy
 - **Deploy Dependencies**: none
 
 ## Conventions
@@ -51,8 +52,10 @@ Layout per `PLAN.md` §3:
 
 ## Gotchas
 
-- `.codex/config.toml` ships with `[mcp_servers.memory]` commented out
-  until CX-31; uncommenting before `memory/mcp_memory/` exists fails every
+- `.codex/config.toml` ships with `[mcp_servers.memory]` commented out;
+  uncommenting it points at the shared `${HARNESS_DATA:-$HOME/.claude}/
+  mcp_memory/server.py` (the live Claude-side server — there is no local
+  `memory/` port). Uncommenting before that path is reachable fails every
   `codex exec` (by design — `required = true` is fail-closed)
 - Fresh clones need the one-time hook trust step: `.codex/hooks/TRUST.md`
 - Codex `.rules` are experimental — defense-in-depth only, never the sole

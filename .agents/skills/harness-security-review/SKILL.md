@@ -1,18 +1,17 @@
 ---
 name: "security-review"
-description: "Security Review phase: spawns security-engineer for OWASP Top 10 audit, dependency scanning, secrets detection, auth/authz review. Runs after Build and gates Final Gate."
+description: "Inline security audit pass over your own diff: OWASP Top 10, secrets, auth/authz, dependency vulns. Run this on yourself before verify/ship — there is no separate security-engineer to spawn."
 context: fork
-agent: security-engineer
 ---
 
-# Security Review
+# Security Review (inline self-audit)
 
 ## § 0 — SAST Triage Layer (Pre-Rubric)
 
 > **Runs BEFORE the OWASP rubric below.** Triage is purely additive: it ingests
 > SAST output (Semgrep, CodeQL, others producing SARIF), assigns each finding
 > a `keep | drop | unsure` verdict with mandatory rationale, merges
-> `keep`+`unsure` into the agent's working set, and logs every decision to a
+> `keep`+`unsure` into the working set, and logs every decision to a
 > forensic JSONL stream. The OWASP rubric is unchanged and runs INDEPENDENTLY
 > alongside the triage block.
 
@@ -31,7 +30,7 @@ unchanged.
 | Rung | Source | When |
 |---|---|---|
 | rung 1 | `$CLAUDE_SAST_SARIF_PATH` (operator override) | CI providing pre-computed SARIF |
-| rung 2 | `$state_dir/{task_id}/scratchpad/sast-*.sarif` | Earlier pipeline phase staged SARIF |
+| rung 2 | `$state_dir/{task_id}/scratchpad/sast-*.sarif` | Earlier pipeline step staged SARIF |
 | rung 3 | direct semgrep subprocess (`semgrep --sarif --json --quiet -- <changed>`) on `git diff main...HEAD` files | On-demand fallback when rungs 1-2 absent. Bounded by `CLAUDE_SAST_SEMGREP_TIMEOUT_SEC` (default 60s). `shutil.which("semgrep") is None` → rung skipped silently. |
 | rung 4 | None | Tool not installed and no staged SARIF — emit `TRIAGE_NO_INPUT`, OWASP rubric proceeds |
 
@@ -59,16 +58,16 @@ for unchanged files).
 
 Unknown severities → `INFO` + stderr warning.
 
-### § 0.3 — Triage iteration (the agent runs this loop)
+### § 0.3 — Triage iteration (run this loop yourself, inline)
 
-> **The security-engineer agent IS the LLM caller.** This section contains the
-> iteration template the agent executes inline — `for each finding`,
-> render the prompt below, parse the strict-JSON response, validate it via
-> `hooks/_lib/sast_triage.py::triage_finding(parsed)`, and append
-> the result to the merged working set.
+> This section is the iteration template you execute inline while running
+> this skill — `for each finding`, render the prompt below, produce the
+> strict-JSON verdict, validate its shape, and append the result to the
+> merged working set. There is no separate reviewer role calling this loop
+> on your behalf.
 
-For each finding produced by § 0.2, render this prompt and call the model
-once (per-finding for v1; batching is a v2 follow-up):
+For each finding produced by § 0.2, work through this decision once
+(per-finding for v1; batching is a v2 follow-up):
 
 ```
 You are triaging a SAST finding for inclusion in a security review.
@@ -97,13 +96,13 @@ Conservatism rule: When in doubt, choose `unsure`. A wrong `drop` ships a vulner
 ```
 
 Strict-JSON output contract: `verdict ∈ {keep, drop, unsure}`. Rationale must
-be non-empty, non-`N/A`, ≥ 8 tokens, and not in the parser's stop-list. The
-parser force-rewrites bad outputs to `unsure` with a system rationale.
+be non-empty, non-`N/A`, ≥ 8 tokens, and not in the parser's stop-list. A
+malformed output gets force-rewritten to `unsure` with a system rationale.
 
 ### § 0.4 — Merge into working set
 
 `keep` + `unsure` findings render into a `## SAST Triage Findings (Pre-Rubric)`
-block PREPENDED to the agent's review. `drop` findings are excluded from the
+block PREPENDED to the review. `drop` findings are excluded from the
 merge block but ARE recorded in the JSONL ledger.
 
 ```markdown
@@ -149,65 +148,55 @@ Telemetry write failure logs to stderr but does NOT block triage.
 
 ---
 
-## Advisor Mode (Sonnet executor + Opus advisor)
-
-**Pairing**: security-engineer ships with `executor: mid` and `advisor: strong (resolves to the GA Opus)` in its frontmatter. Sonnet drives the OWASP/secrets sweep, Opus is consulted for threat-model and severity-classification calls.
-
-**Status**: This is the **intended default** — currently advisory because the Agent input schema does not yet expose `advisor`. Will become the enforced default the moment the schema lands. Until then, the `pre-agent-advisor.sh` PreToolUse hook logs the would-be pairing to `metrics/{session}/advisor-dispatch.jsonl` for observability; no spawn is blocked, no model is downgraded.
-
-**Fallback semantics** (all log-only today, all enforced later):
-- Frontmatter pairing present + `ANTHROPIC_API_KEY` set + `CLAUDE_REVIEW_ADVISOR_DISABLED` unset → executor=sonnet, advisor=opus (`source: frontmatter-pairing`)
-- `CLAUDE_REVIEW_ADVISOR_DISABLED=1` → executor/advisor both null, `source: env-disabled` (operator override; pure `model:` opus solo)
-- `ANTHROPIC_API_KEY` missing → executor/advisor both null, `source: no-api-key`
-- Frontmatter omits executor/advisor (non-reviewer agents) → `source: no-pairing-frontmatter`
-
-**Cost** (PROVISIONAL pending advisor-baseline):
-- Naive Opus-solo cost vs. Sonnet+Opus-advisor pairing: roughly ~40% cheaper per review (PROVISIONAL — see `eval/baselines/{latest}-advisor-baseline.md`).
-- Quality-equivalence claim (≥95% verdict-agreement on the regression suite) is also PROVISIONAL until advisor-baseline runs.
-
 ## What This Skill Does
 
-Automates the Review phase security audit. Spawns a read-only security-engineer agent to assess security posture.
+A single-thread contractor has no separate security-engineer role to
+spawn — this skill is the security checklist you run against your OWN
+diff, in the same session that wrote it, before verify/ship/handoff.
 
 ## Current Context
+
 - Branch: !`git branch --show-current`
 - Changed files: !`git diff main...HEAD --name-only 2>/dev/null || echo 'N/A'`
 - Diff stats: !`git diff main...HEAD --stat 2>/dev/null || echo 'N/A'`
 
-## When to Invoke
+## When to Run
 
-- After Build phase emits `BUILD_COMPLETE` (which now includes code-reviewer APPROVE as a step inside Build).
-- Runs as its own phase — code-review is no longer parallel with security-review because code-review is now part of Build. Security review's gate is independent.
-- APPROVE required before advancing to Final Gate (verify + test + accept + patch-critique).
+- After the build/fix work is functionally complete (`$harness-code-review`
+  self-review has already run or is about to run in the same session —
+  order between the two does not matter, both are read-only passes over
+  the same diff).
+- APPROVE required before advancing to verify/ship or writing
+  `Done (verified)` into a `HANDOFF.md`.
 
 ## Process
 
-### 1. Spawn Security Engineer
+### 1. Audit the Diff
 
-```
-// Spawn in same message as code-reviewer for parallel execution
-Agent({
-  subagent_type: "security-engineer",
-  prompt: "Security review of changes on this branch against main. Assess:
-    - OWASP Top 10 vulnerabilities (injection, XSS, CSRF, etc.)
-    - Authentication and authorization (are auth checks present and correct?)
-    - Input validation at system boundaries
-    - Secrets in code or commits (API keys, tokens, passwords)
-    - Dependency vulnerabilities (run npm audit / bundle audit)
-    - Secure cookie flags, HTTPS enforcement
-    - Content-Type validation on file uploads
-    - If the diff touches learning/, agent-memory/, or hooks/, ALSO apply the Agentic OWASP Top 10 checklist (memory poisoning, instinct poisoning, tool misuse, goal hijacking) — see agents/security-engineer.md § OWASP Top 10 for Agentic Applications.
-    Produce a verdict with severity levels: CRITICAL, HIGH, MEDIUM, LOW.
-    APPROVE if no CRITICAL, HIGH, or MEDIUM findings. CHANGES_REQUESTED if any CRITICAL, HIGH, or MEDIUM findings exist. LOW and INFO findings are noted in the review output but do not block."
-})
-```
+Assess the diff against the Security Checklist below:
 
-No `isolation: "worktree"` — security-engineer is read-only.
+- OWASP Top 10 vulnerabilities (injection, XSS, CSRF, etc.)
+- Authentication and authorization (are auth checks present and correct?)
+- Input validation at system boundaries
+- Secrets in code or commits (API keys, tokens, passwords)
+- Dependency vulnerabilities (`npm audit` / `bundle audit`)
+- Secure cookie flags, HTTPS enforcement
+- Content-Type validation on file uploads
+- If the diff touches `learning/`, `agent-memory/`, or `hooks/`/`.codex/hooks/`,
+  ALSO apply the Agentic Surface Gate checklist below (memory poisoning,
+  instinct poisoning, tool misuse, goal hijacking).
 
-### 2. Process Verdict
+Assign a verdict with severity levels: CRITICAL, HIGH, MEDIUM, LOW.
+APPROVE if no CRITICAL, HIGH, or MEDIUM findings. CHANGES_REQUESTED (fix
+it yourself) if any CRITICAL, HIGH, or MEDIUM findings exist. LOW and
+INFO findings are noted but do not block.
 
-- **APPROVE** (no CRITICAL/HIGH/MEDIUM): Advance. Record security summary for PR narrative.
-- **CHANGES_REQUESTED**: Spawn engineer (with worktree) to fix CRITICAL/HIGH/MEDIUM findings. Then re-run both reviews.
+### 2. Act on Findings
+
+- **APPROVE** (no CRITICAL/HIGH/MEDIUM): proceed to the next step
+  (verify/ship/handoff).
+- **CHANGES_REQUESTED**: fix the CRITICAL/HIGH/MEDIUM findings yourself,
+  in this same session. Re-run the checklist against the updated diff.
 
 ## Security Checklist
 
@@ -224,24 +213,16 @@ No `isolation: "worktree"` — security-engineer is read-only.
 
 ## Agentic Surface Gate
 
-Changes touching the agent control plane — `learning/`, `agent-memory/`, or
-`hooks/` — require the **Agentic OWASP Top 10** checklist (memory poisoning,
-instinct poisoning, tool misuse, goal hijacking; see
-`agents/security-engineer.md` § OWASP Top 10 for Agentic Applications).
-
-**Enforcement.** The `agentic-security-gate.sh` PreToolUse:Agent hook computes
-the branch changeset and, when any agentic surface is touched, **blocks**
-(`exit 2`) the security-engineer spawn unless the spawn prompt carries the
-Agentic OWASP directive. The §1 spawn prompt above always carries it, so
-skill-driven reviews pass; the gate catches ad-hoc spawns that omit it.
-
-| Env var | Effect |
-|---|---|
-| `CLAUDE_DISABLE_AGENTIC_GATE=1` | Skip the gate; the spawn proceeds (logged to stderr) |
-
-Gating-trigger logic lives in `hooks/_lib/agentic_security_gate.py`
-(`touches_agentic_surface` / `gate_decision`); tests in
-`tests/hooks/test_agentic_security_gate.py`.
+Changes touching the agent control plane — `learning/`, `agent-memory/`,
+or `hooks/`/`.codex/hooks/` — get an extra pass covering the Agentic
+OWASP Top 10 concerns: memory poisoning (a written instinct/memory file
+that injects instructions rather than describing a pattern), instinct
+poisoning (a promoted instinct that encodes an unsafe shortcut), tool
+misuse (a hook or skill granted broader tool access than its task
+needs), and goal hijacking (prompt content in a memory/scratchpad file
+that could redirect a future session's objective). There is no separate
+enforcement hook wired for this on the codex-harness side today — this
+is a self-audit discipline, not a blocking gate.
 
 ## Supply Chain Security (if Trail of Bits plugins available)
 
@@ -252,20 +233,6 @@ When Trail of Bits security skills are installed (`supply-chain-risk-auditor`, `
 - [ ] Use `differential-review` for security-focused diff analysis on high-risk changes
 
 These complement `npm audit`/`bundle audit` by covering supply chain threats that package auditors miss.
-
-## Parallel Execution
-
-This skill belongs to the `review` parallel group. It is dispatched via Parallel Dispatch Protocol (see `protocols/parallel-dispatch-protocol.md`), not via sequential Skill tool invocation. The security-engineer agent reads this file directly and executes it.
-
-When dispatched in parallel:
-1. The orchestrator spawns code-reviewer + security-engineer in a single message
-2. Each agent reads its own skill file independently
-3. The orchestrator collects both verdicts before proceeding
-
-## Prerequisite
-
-- Build phase complete: BUILD_COMPLETE verdict from `/harness:build-implementation`, `/harness:refactor`, or `/harness:bug-fix`
-- Must be dispatched IN PARALLEL with `/harness:code-review` via Parallel Dispatch Protocol
 
 ## Severity Grading
 
@@ -281,14 +248,16 @@ Every finding MUST be assigned a severity. Use the calibration table below:
 
 **Verdict rule:** APPROVE if no CRITICAL, HIGH, or MEDIUM findings. CHANGES_REQUESTED if any CRITICAL, HIGH, or MEDIUM findings exist. LOW and INFO are noted but do not block.
 
-**In-cycle enforcement:** CHANGES_REQUESTED findings MUST be fixed in the current pipeline. The orchestrator is not permitted to downgrade findings to follow-up tickets, ship with known-broken security behavior, or ask the user whether to defer. See `protocols/pipeline-protocol.md` § In-Cycle Fix Rule. If a finding is genuinely orthogonal (different attack surface, different module), mark it INFO, not MEDIUM.
+**In-cycle enforcement:** CHANGES_REQUESTED findings are fixed in this
+same session, never deferred to a follow-up ticket or shipped
+known-broken. If a finding is genuinely orthogonal (different attack
+surface, different module), mark it INFO, not MEDIUM.
 
 ## Phase Output
 
 ```
 Verdict: APPROVE / CHANGES_REQUESTED
-Next: If BOTH code-review and security-review APPROVE → /harness:verify
-      If CHANGES_REQUESTED → spawn engineer to fix → re-invoke BOTH review skills
+Next: If APPROVE → proceed (verify/ship/handoff)
+      If CHANGES_REQUESTED → fix in this session, re-run this checklist
 Findings: [severity-rated findings: CRITICAL, HIGH, MEDIUM, LOW]
-Agent summaries: [security-engineer's 2-3 sentence summary]
 ```

@@ -16,14 +16,17 @@ approval_policy = "on-request"
 max_depth = 3
 
 # ---------------------------------------------------------------------------
-# Memory MCP server — registered at CX-31 (Phase 3), once memory/ is ported.
+# Memory MCP server — shared-root registration (CX-70/CX-83). There is no
+# local memory/ port: both harnesses point at the SAME Claude-side server
+# under the shared `${HARNESS_DATA:-$HOME/.claude}` root, so the contractor
+# reads/writes the one live memory index rather than a second synced copy.
 #
 # `required = true` makes `codex exec` exit with an error if the memory
 # server fails to start: the codex-harness equivalent of the Claude
 # harness's fail-closed posture for a broken memory index (Iron Law 8).
-# Kept commented until CX-30 lands the server, because required=true with
-# a nonexistent script would (correctly, but unhelpfully) fail every
-# invocation of this skeleton.
+# Kept commented until a contractor session actually needs MCP memory
+# access, because required=true with an unreachable script would
+# (correctly, but unhelpfully) fail every invocation of this skeleton.
 #
 # [mcp_servers.memory]
 # command = "python3"

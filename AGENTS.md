@@ -6,10 +6,16 @@ native `AGENTS.md` autoload chain (global `~/.codex/AGENTS.md` → repo root →
 nested `AGENTS.md` files, with `AGENTS.override.md` taking precedence over
 whatever it sits alongside — nearer files silently win). This file is
 designed to **stand alone**: a fresh Codex session that reads only this file
-must be able to state the phase order, all 13 Iron Laws, the code shape
-rules, and the worktree/commit protocol without chasing another file. Other
-sections below reference `PLAN.md` or not-yet-built pieces, and are marked as
-such.
+must be able to state the Iron Laws, the code shape rules, the
+worktree/commit protocol, and the contractor runtime model without chasing
+another file.
+
+Codex is a fallback **contractor** here, not an independent orchestrator:
+it picks up work when the Claude harness's usage window runs out and hands
+it back when Claude returns (see § Runtime Model, below). There is no
+`scripts/codex-harness` dispatch layer, no per-role agent team, and no
+phase-verdict-gating orchestrator on the Codex side — every session is a
+single thread working one task at a time, following the discipline below.
 
 > **Caution — `AGENTS.override.md` precedence.** Codex's discovery chain
 > lets a file closer to the working directory silently override this one.
@@ -27,9 +33,9 @@ needs this **one-time manual trust step** — Claude's hooks are trusted
 implicitly by living under `~/.claude/hooks/`, which the user already
 controls; Codex has no equivalent implicit trust. Run `/hooks`, review every
 entry registered from `.codex/hooks/hooks.json`, and trust them before
-starting any pipeline work in this repo. Do not skip this because a hook
-"looks routine" — it is the only thing standing between you and an
-unreviewed script executing on every tool call.
+starting any work in this repo. Do not skip this because a hook "looks
+routine" — it is the only thing standing between you and an unreviewed
+script executing on every tool call.
 
 ## Engineering Identity
 
@@ -51,44 +57,40 @@ Same bracketed-tag convention as the source harness: `[ASPIRATIONAL]` marks
 a law not backed by a blocking enforcement surface; `[ENFORCED]` marks a law
 with a shipped, blocking enforcement surface. The **Claude status** column
 below is the source harness's own status marker, preserved for reference.
-The **Codex status** column is this harness's own status, which is often
-weaker than Claude's — Codex has no native "pipeline phase verdict gate"
-primitive at all, so several laws downgrade from enforced/log-only to
-advisory, script-enforced. This downgrade is an intrinsic architecture gap
-(no primitive to lean on), not a maturity gap that closes as Codex hooks
-improve — see the summary note at the end of this section.
+The **Codex status** column is this harness's own status. Codex has no
+native "pipeline phase verdict gate" primitive and no orchestrator process
+of its own — under the contractor model, laws that the Claude harness
+enforces via its orchestrator/agent-team layer become **self-enforced
+discipline**: the single contractor session applies them directly, backed
+where possible by the native `command`-type hooks in `.codex/hooks/`
+(ported in Phase 5, CX-50..54 — see § Non-LLM Gates on Destructive Verbs
+and § Code Shape Rules below for the hooks that exist today).
 
 1. **NO ACCEPTANCE CRITERION SHIPS WITHOUT (a) a failing-then-passing test
    for that AC in the diff and (b) mutation score ≥ 70% on changed lines.**
-   Claude status: `[ASPIRATIONAL]`. Codex status: **ADVISORY, script-enforced**
-   — `scripts/codex-harness` (Phase 2, CX-21/CX-25) checks for a
-   failing-then-passing test pair and a mutation-score report before
-   advancing the Build phase's verdict; there is no hook-level block on the
-   underlying `codex exec` tool calls themselves. Substitution mechanism:
-   orchestration-script gate at phase-advancement time, backstopped by a
-   CI mutation-score check (Phase 5, CX-54).
+   Claude status: `[ASPIRATIONAL]`. Codex status: **ASPIRATIONAL,
+   self-enforced** — you (the contractor) run the ATDD cycle yourself:
+   batched-RED, GREEN, mutation gate, per `$harness-build-implementation`.
+   There is no second process checking your work before it lands; the
+   discipline is the enforcement.
 
 2. **NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE.** Stale test
    output from earlier in a session is not evidence — re-run before
    claiming done. Claude status: `[ASPIRATIONAL]` (log-only in the source
-   harness). Codex status: **ADVISORY, script-enforced** — the orchestration
-   script re-invokes the test/verify step itself rather than trusting an
-   agent's self-report before writing a phase-complete verdict. Substitution
-   mechanism: orchestration-script re-verification, same posture as the
-   source harness's log-only hook, just moved into the script layer since
-   Codex has no `PreToolUse` prompt-mutation interception to lean on (see
-   PLAN.md §7 Risks).
+   harness). Codex status: **ASPIRATIONAL, self-enforced** — before writing
+   `Done (verified)` into a `HANDOFF.md` or reporting completion to the
+   user, re-run the test/verify command yourself; do not cite output from
+   earlier in the same session as current evidence.
 
 3. **THE ORCHESTRATOR NEVER WRITES SOURCE CODE.** Claude status:
    `[ENFORCED]` (`hooks/_lib/is-protected-path.sh` blocks the orchestrator
    from Edit/Write/shell-pipe into protected locations). Codex status:
-   **ADVISORY — partial, code-review-time guarantee** — Codex has no
-   "orchestrator process" concept for a hook to gate at runtime, so this law
-   becomes "the wrapper script's source (`scripts/codex-harness`,
-   `scripts/lib/*.sh`) is small, reviewed, and never itself calls
-   Edit/Write against protected paths" rather than a hook-blocked
-   invariant. Substitution mechanism: code review of the orchestration
-   script itself, not a runtime gate.
+   **N/A — no orchestrator process exists on this side.** There is nothing
+   for this law to gate: the contractor IS the engineer, and writing
+   source code in the worktree is the job. The spirit survives in a
+   narrower form — this repo's own seed content (`AGENTS.md`, skills,
+   hooks) is edited deliberately and reviewed, not incidentally, by
+   whichever session is updating the harness itself.
 
 4. **REPO_ROOT HEAD STAYS ON `main` FOR THE ENTIRE DURATION OF EVERY
    PIPELINE RUN.** All HEAD-mutating git commands run via worktree
@@ -97,136 +99,184 @@ improve — see the summary note at the end of this section.
    `rebase`/`gh pr create`). Codex status: **ENFORCED** — this is the
    strongest native-hook parity point in the whole port, because Codex's
    `PreToolUse` `command`-type hooks genuinely block (`exit`-code semantics
-   confirmed), same as Claude's. Substitution mechanism: `main-branch-guard.sh`
-   ported 1:1 as a `.codex/hooks/hooks.json` `PreToolUse` entry (Phase 5,
-   CX-50), plus `.codex/rules/harness-destructive.rules` `prefix_rule`
-   defense-in-depth (CX-52, marked experimental by OpenAI — never the sole
-   layer).
+   confirmed), same as Claude's. Substitution mechanism:
+   `.codex/hooks/main-branch-guard.sh`, a `PreToolUse:Bash` entry in
+   `.codex/hooks/hooks.json` (Phase 5, CX-50), plus
+   `.codex/rules/harness-destructive.rules` `prefix_rule` defense-in-depth
+   (CX-52, marked experimental by OpenAI — never the sole layer). Full
+   mechanics: § Non-LLM Gates on Destructive Verbs, below.
 
 5. **NO PHASE SKIPPED. NO GATE BYPASSED. NO SKILL OMITTED.** Every pipeline
    phase runs the corresponding skill; verdicts gate advancement. Claude
-   status: `[ASPIRATIONAL]`. Codex status: **ADVISORY** — pure
-   orchestration-script sequencing (`scripts/lib/phase-order.sh`, CX-25)
-   drives the fixed phase order below and refuses to advance without a
-   verdict; there is no native Codex primitive equivalent to a phase gate
-   at all. Substitution mechanism: `phase-order.sh` state machine.
+   status: `[ASPIRATIONAL]`. Codex status: **ASPIRATIONAL, self-enforced —
+   no phase-gate primitive to lean on.** A single-thread contractor
+   session works the `Next Actions` list from a handed-off `HANDOFF.md`
+   (or an ad-hoc task) vertically: build → self-review
+   (`$harness-code-review` + `$harness-security-review`) → verify → hand
+   back or ship. Skipping a step is a self-discipline failure, not
+   something a gate catches for you.
 
 6. **FINDINGS SURFACED DURING REVIEW ARE FIXED IN THIS PIPELINE.** Never
    filed as follow-ups, never surfaced as questions to the user, no
    known-incomplete ships except when a fix is architecturally large or
    outside the current task's layer. Claude status: `[ASPIRATIONAL]`. Codex
-   status: **ADVISORY** — orchestration-script re-dispatch on
-   non-passing verdict (`scripts/lib/dispatch-fix.sh`, CX-26) re-invokes the
-   fix-engineer role in-cycle rather than closing the loop and moving on.
-   Substitution mechanism: `dispatch-fix.sh` rework loop.
+   status: **ASPIRATIONAL, self-enforced** — when `$harness-code-review` or
+   `$harness-security-review` returns CHANGES_REQUESTED, fix it yourself,
+   in the same session, before proceeding. There is no fix-engineer to
+   hand it to.
 
 7. **EVERY PIPELINE PRODUCES AN OBSERVATION.** No exceptions — successes
    and failures both; the continuous learning loop depends on data volume.
-   Claude status: `[ASPIRATIONAL]`. Codex status: **ADVISORY,
-   script-enforced** — the orchestration script's Reflect-phase step writes
-   an observation into `observations.jsonl` unconditionally before it will
-   mark a pipeline run complete. Substitution mechanism: Reflect-phase step
-   in `scripts/codex-harness`, feeding the ported `learn` skill (Phase 3,
-   CX-32).
+   Claude status: `[ASPIRATIONAL]`. Codex status: **ASPIRATIONAL,
+   self-enforced** — append an observation to the shared learning log
+   (`$HARNESS_DATA/learning/observations/*.jsonl`) with `"source": "codex"`
+   before wrapping up (see `pipeline-state/HANDOFF-CONTRACT.md` §
+   Observation tagging and `$harness-resume-handoff` Step 5, which does
+   this as part of the handoff-back procedure).
 
 8. **A SECURITY OR CORRECTNESS GATE THAT CANNOT EVALUATE ITS CONDITION
    FAILS CLOSED.** A gate is any check whose verdict admits or stops work —
    halt or refuse on an unevaluable input (empty input, missing file,
    unbound variable, tool error, absent dependency); never silently allow.
    Claude status: `[ASPIRATIONAL]`. Codex status: **PARTIAL — hook-enforced
-   where a native `command` hook exists, script-enforced everywhere else** —
-   `main-branch-guard.sh` and the code-shape hooks (both native `PreToolUse`/
-   `PostToolUse` `command` hooks, Phase 5) fail closed at the tool-call
-   level; verdict-level gates with no native hook backing (mutation score,
-   observation capture) fail closed only insofar as the orchestration script
-   is written to halt on an unevaluable condition rather than proceed.
-   Substitution mechanism: split — native hook fail-closed for tool-call
-   gates, orchestration-script fail-closed discipline for verdict gates.
+   where a native `command` hook exists, self-enforced everywhere else** —
+   `main-branch-guard.sh` and the code-shape/comment-smell/function-body
+   hooks (native `PreToolUse`/`PostToolUse` `command` hooks, Phase 5) fail
+   closed at the tool-call level; verdict-level gates with no native hook
+   backing (mutation score, observation capture) fail closed only insofar
+   as you, the contractor, halt on an unevaluable condition rather than
+   proceed and hope.
 
 9. (DS) **NO MODEL OR ANALYSIS CONCLUSION SHIPS WITHOUT A PRE-REGISTERED
    EXPERIMENT CARD AND A HOLDOUT EVALUATION AGAINST A BASELINE.** Amendments
    to the card after results are seen are logged verdicts
    (`EXPERIMENT_AMENDED`), never silent edits. Claude status:
-   `[ASPIRATIONAL]`. Codex status: **ADVISORY, script-enforced** — same
-   class as Laws 1/5/6/7: the orchestration script checks for an experiment
-   card and holdout-eval artifact before advancing a DS pipeline's verdict.
-   Future enforcement surface (not yet ported): a `harness-experiment`
-   skill port + card schema, mirroring the source `skills/experiment/` and
-   `protocols/experiment-protocol.md`.
+   `[ASPIRATIONAL]`. Codex status: **ASPIRATIONAL, self-enforced** — same
+   class as Laws 1/5/6/7: check for an experiment card and holdout-eval
+   artifact yourself before treating a DS conclusion as shippable. No
+   `harness-experiment` skill is ported into this repo yet.
 
 10. (DS) **A NEGATIVE OR NULL RESULT IS A VALID PIPELINE OUTCOME.** No agent
     may re-run, re-slice, or re-metric an experiment to flip its verdict;
     additional runs require an `EXPERIMENT_AMENDED` verdict, not a quiet
-    re-run. Claude status: `[ASPIRATIONAL]`. Codex status: **ADVISORY** —
-    append-only discipline enforced by the orchestration script refusing to
-    overwrite a prior experiment-registry entry silently. Future
-    enforcement surface (not yet ported): an `evaluation-engineer` role
-    port + registry append-only check.
+    re-run. Claude status: `[ASPIRATIONAL]`. Codex status: **ASPIRATIONAL**
+    — append-only discipline you apply yourself: never silently overwrite
+    a prior experiment-registry entry.
 
 11. (DS) **EVERY DATASET REFERENCE IN A PIPELINE RESOLVES TO AN IMMUTABLE
     VERSION, AND EVERY RUN IS REPRODUCIBLE FROM (code-ref, data-ref,
     env-lock, seed).** Claude status: `[ASPIRATIONAL]`. Codex status:
-    **ADVISORY** — same script-enforced-only class; no native Codex
-    primitive resolves or locks dataset versions. Future enforcement
-    surface (not yet ported): a `data-version` skill/tooling port + a
-    `repro-verifier` role port.
+    **ASPIRATIONAL** — same self-enforced-only class; no native Codex
+    primitive resolves or locks dataset versions.
 
 12. (DS) **RAW DATA NEVER ENTERS AGENT CONTEXT, TRANSCRIPTS, LOGS, OR
     COMMITS BEYOND CAPPED, PII-MASKED SAMPLES.** Claude status:
     `[ENFORCED at hook-ship time]` (not yet shipped in the source harness
-    either, per its own note — being built in parallel by other Wave-1/2
-    tasks). Codex status: **ENFORCED at capture time, once ported** — this
-    is the one DS law that ports as a native `command`-type hook once the
-    ported sanitizer scripts land (mirrors Law 4's native-hook parity),
-    because raw-data-in-context is exactly the kind of deterministic,
-    exit-2-on-violation check Codex `PreToolUse`/`PostToolUse` hooks handle
-    well. Substitution mechanism: ported equivalents of
-    `hooks/data-read-guard.sh`, `hooks/data-commit-guard.sh`,
-    `hooks/pii-transcript-scan.sh` registered in `.codex/hooks/hooks.json`
-    (not yet built in this repo — ships alongside the same source-harness
-    parallel task that builds the Claude-side hooks; treat as pending,
-    not yet present in `.codex/hooks/`).
+    either, per its own note). Codex status: **NOT YET PORTED** — this is
+    the one DS law that would port as a native `command`-type hook once
+    the ported sanitizer scripts land (mirrors Law 4's native-hook
+    parity), because raw-data-in-context is exactly the kind of
+    deterministic, exit-2-on-violation check Codex `PreToolUse`/
+    `PostToolUse` hooks handle well. Until then, treat it as
+    self-enforced: never paste raw data samples into context, transcripts,
+    or commits beyond capped, PII-masked excerpts.
 
 13. (DS) **A DATA CONTRACT VIOLATION HALTS THE PIPELINE.** Silent coercion,
     silent null-dropping, and silent row-filtering are treated as
     correctness bugs, not data cleaning. Claude status: `[ASPIRATIONAL]`.
-    Codex status: **ADVISORY** — same script-enforced-only class; the
-    orchestration script halts phase advancement on a
-    `CONTRACT_VIOLATION` verdict from the (not yet ported) `data-contract`
-    skill, naming the offending column and expectation, same as the source
-    harness's design.
+    Codex status: **ASPIRATIONAL** — same self-enforced-only class; halt
+    and name the offending column and expectation rather than silently
+    coercing.
 
 **Summary of what strengthens vs weakens under Codex.** Law 4 (main-branch
-invariant) and (once its hooks ship) Law 12 (raw-data guard) are the
-strongest native-hook parity points, because both are deterministic,
-exit-2-on-violation checks that Codex's `PreToolUse`/`PostToolUse`
+invariant) is the strongest native-hook parity point, because it is a
+deterministic, exit-2-on-violation check that Codex's `PreToolUse`
 `command` hooks genuinely block on, same as Claude's. Laws 1, 2, 5, 6, 7, 9,
-10, 11, 13 downgrade to advisory/script-enforced-only because Codex has no
-pipeline-phase or verdict-gate primitive at all — this is an intrinsic
-architecture gap, not a hook-maturity gap, and will not close as Codex
-hooks mature further; it needs the orchestration script
-(`scripts/codex-harness` + `scripts/lib/*.sh`) to keep doing this work
-indefinitely. Law 3 downgrades because Codex has no "orchestrator process"
-concept to gate at runtime — the invariant becomes a code-review-time
-guarantee on the wrapper script's own source, not a runtime one. (Source:
-`rules/core.md` § Iron Laws 1-8 and `protocols/data-science-invariants.md`
-§ DS Iron Laws 9-13 in the Claude harness at
-`/home/samanthachen/git/.claude`, transcribed 2026-07-10; Codex
-enforcement-status derivation cross-checked against PLAN.md §1 Executive
-Summary "What needs re-architecture", §3 Key design moves, and §4's summary
-paragraph, since PLAN.md's own §4 table cells were truncated mid-sentence in
-the source file — this file's per-law text above is the full, untruncated
-restatement.)
+10, 11, 13 are self-enforced-only because Codex has no pipeline-phase or
+verdict-gate primitive and no orchestrator process to run one — a
+single-thread contractor applies the discipline directly rather than
+having a second process check it. Law 3 is N/A rather than downgraded:
+there is no orchestrator process on the Codex side for the law to gate at
+all. (Source: `rules/core.md` § Iron Laws 1-8 and
+`protocols/data-science-invariants.md` § DS Iron Laws 9-13 in the Claude
+harness at `/home/samanthachen/git/.claude`, transcribed 2026-07-10 and
+revised 2026-07-13 for the Phase 7/8 contractor pivot.)
+
+## Non-LLM Gates on Destructive Verbs
+
+Deterministic, non-LLM enforcement — these hooks block on argv shape
+alone, before any model reasoning happens, and they exist precisely
+because an LLM-blessed destructive command is not a safe enough gate on
+its own (the PocketOS Apr 27 2026 incident this gate closes: a destructive
+command shipped without a non-LLM confirmation step). Shipped in Phase 5
+(CX-50..54) as native Codex `command`-type hooks — registered in
+`.codex/hooks/hooks.json` and co-existing in this repo alongside
+everything CX-80..87 removed:
+
+| Hook | Event | What it blocks |
+|---|---|---|
+| `.codex/hooks/main-branch-guard.sh` | `PreToolUse:Bash` | Bare HEAD-mutating git verbs at REPO_ROOT without a worktree-delegation prefix (`git -C <wt> …`, `cd <wt> && …`) — `git checkout`/`switch`/`reset --hard`/`merge`/`rebase`, `gh pr create`, and the same destructive-verb list below. |
+| `.codex/hooks/code-shape-check.sh`, `function-body-check.sh`, `comment-smell-check.sh` | `PostToolUse:Write\|Edit` | Code shape violations (see § Code Shape Rules below) and WHAT-only comments on new/changed lines. |
+| `.codex/hooks/worktree-reaper.sh` | `SessionStart` | (Maintenance, not a gate — always exits 0.) Reaps provably-safe orphaned worktrees under `.claude/worktrees/`. |
+| `.codex/hooks/learning-gc.sh` | `SessionStart` | (Maintenance, not a gate.) Delegates to the shared-root GC engine so the learning log doesn't grow unbounded. |
+| `.codex/hooks/codebase-map-rebuild.sh` | `SessionStart` | (Maintenance, not a gate — deferred stub; the tree-sitter generator is not ported.) |
+
+**The destructive-verb confirmation-token protocol.** Beyond the
+main-branch invariant, `main-branch-guard.sh` also blocks a fixed list of
+destructive verbs (`.codex/hooks/_lib/destructive-verbs.txt` —
+volume/cloud-storage/infra deletion, `rm -rf ~` / `rm -rf $HOME`,
+force-push to protected branches) UNLESS a live confirmation token is
+present:
+
+```bash
+export CLAUDE_DESTRUCTIVE_CONFIRM=I-have-a-restorable-backup-elsewhere
+export CLAUDE_DESTRUCTIVE_CONFIRM_TS=$(date +%s)
+```
+
+Both must be set; `CLAUDE_DESTRUCTIVE_CONFIRM_TS` must be within the last
+`CLAUDE_DESTRUCTIVE_CONFIRM_TTL` seconds (default `600`) of the current
+time — a stale token does not re-arm the gate. There is no way to disable
+this check globally; it is per-command, per-confirmation. Setting the
+token does not bypass the main-branch invariant itself (a delegated
+worktree prefix is still required for HEAD-mutating verbs) — the two
+checks are independent.
+
+**Defense-in-depth mirror.** `.codex/rules/harness-destructive.rules`
+mirrors the same verb list as `prefix_rule(...)` entries — Codex's `.rules`
+/ `prefix_rule` mechanism is explicitly marked **experimental** by OpenAI
+("Rules are experimental and may change"), so this file is a coarse
+second layer, never the sole enforcement. `prefix_rule` can only match an
+argv prefix — it cannot express "only when the target is `main`" or
+"unless delegated to a registered worktree," so the `.rules` file forbids
+the whole verb unconditionally while the hook admits the safe,
+worktree-delegated forms. If `.codex/rules/` is ever removed, the hook
+still enforces on its own.
+
+**Maintenance-hook bypass escape hatches** (SessionStart hooks only —
+these are housekeeping, never a security gate, so they degrade gracefully
+when disabled):
+
+| Env var | Effect |
+|---|---|
+| `CLAUDE_DISABLE_WORKTREE_REAPER=1` or `CODEX_HARNESS_DISABLE_WORKTREE_REAPER=1` | Skip the worktree reaper for this session |
+| `CLAUDE_DISABLE_LEARNING_GC=1` or `CODEX_HARNESS_DISABLE_LEARNING_GC=1` | Skip learning-log garbage collection for this session |
+
+These bypass hatches do NOT apply to `main-branch-guard.sh` or the code
+shape hooks — those are correctness/safety gates, not maintenance, and
+have no blanket disable switch (only the narrow, per-command destructive-
+verb confirmation-token protocol above).
 
 ## Code Shape Rules
 
-Every code-touching agent enforces continuously.
+Every code-touching session enforces continuously.
 
 - **Naming is the primary cohesion gate:** can't name a unit without "and"
   → split; can't give an extract an honest name → do NOT extract.
 - **Per-language hard block on new/changed code:** Ruby methods > 5 lines
   blocked (exit 2); TypeScript/JS functions > 12 lines blocked; Python/Go
-  fallback cap retained. Legacy code is advisory only.
+  fallback cap retained. Legacy code is advisory only. Enforced by
+  `.codex/hooks/code-shape-check.sh` and `function-body-check.sh`
+  (`PostToolUse:Write|Edit`, Phase 5, CX-51).
 - **One thing per function.** If you cannot name it without a conjunction
   ("X and Y"), split.
 - **Cyclomatic complexity ≤ 5.** Nesting ≤ 2 — guard clauses or extraction,
@@ -238,8 +288,8 @@ Every code-touching agent enforces continuously.
   unit B, bring them together — this is HOW to fix a flagged function, not
   a bypass.
 - **Comments carry WHY only.** New/changed WHAT-comments in source are
-  blocked (exit 2) by hook; doc-comments, license headers, and
-  `# WHY:`/`# SAFETY:` prefixes are always allowed.
+  blocked (exit 2) by `.codex/hooks/comment-smell-check.sh`; doc-comments,
+  license headers, and `# WHY:`/`# SAFETY:` prefixes are always allowed.
 - **Don't complect** (Hickey): one concern per unit; complected code defeats
   reasoning and breaks reliability.
 - **Classes/files:** one responsibility, no hard size number — size is a
@@ -255,184 +305,95 @@ as authoritative and this section's list as the binding subset.
 
 ## Worktree + Commit Protocol
 
-- **Write-capable roles** (software-engineer, frontend-engineer,
-  qa-engineer, database-engineer, infrastructure-engineer): get a git
-  worktree created by `scripts/lib/dispatch-agent.sh` — `git worktree add`
-  runs before each `codex exec --profile <role>` invocation for that role.
-  This is MANDATORY; Codex has no native per-agent worktree field, so the
-  orchestration script does it explicitly (Codex's automatic "Worktree" UI
-  feature is scoped to the ChatGPT desktop app only, not `codex exec`).
-- **Read-only roles** (code-reviewer, security-engineer, product-reviewer,
-  architect): get no worktree — they run against the existing checkout.
-- **Every agent commits before completing** — uncommitted work cannot be
-  merged. WIP commits use a `WIP:` prefix.
+- **All build/fix/refactor work happens in a git worktree** (`git worktree
+  add "$WORKTREE_PATH" -b <branch>`), never directly against the checkout
+  you started the session in. There is no per-agent isolation field to set
+  — you create the worktree yourself, explicitly, before writing any code.
+- **You commit before wrapping up** — uncommitted work cannot be handed
+  back or merged. WIP commits use a `WIP:` prefix.
 - **No `git add -A` / `git add .`** — stage specific files to avoid
   sensitive-file leakage.
 - **REPO_ROOT HEAD stays on `main` for the entire duration of every
-  pipeline run.** All HEAD-mutating git commands run via worktree
+  session's work.** All HEAD-mutating git commands run via worktree
   delegation (`git -C "$WORKTREE" …` or `(cd "$WORKTREE" && …)`). Bare
   `git checkout`/`switch`/`reset --hard`/`merge`/`rebase`/`gh pr create` are
-  blocked by the ported `main-branch-guard.sh` native hook (see Iron
-  Law 4, above).
+  blocked by `main-branch-guard.sh` (see Iron Law 4 and § Non-LLM Gates on
+  Destructive Verbs, above).
+- **Resource bounds.** `.codex/hooks/worktree-reaper.sh` reaps orphaned
+  worktrees at `SessionStart` under the safety contract in § Non-LLM Gates
+  on Destructive Verbs — a worktree is removed ONLY when its branch is
+  merged into `main`, has zero uncommitted/untracked changes, and zero
+  commits ahead of `main`.
 
-## Pipeline Phase Order
+## Working Discipline (single-thread, no phase gates)
 
-`Plan → Plan Validation → Build (incl. code-review as final step) →
-Security Review → Final Gate (Verify + Test + Accept + Patch Critique) →
-Ship → Deploy → Reflect`. No phase is skipped. Every phase has a
-corresponding skill. Code-review is not its own phase — it runs as the
-final step of Build (the value-add is "a second model with different
-priors reviewing the diff", not a separate phase boundary). Security review
-remains a separate phase (orthogonal concern). Reflect always runs (per
-Iron Law 7, above — every pipeline produces an observation).
-
-Build has three dispatch variants — standard, Best-of-N, and PDR-RTV —
-selected by the ported `harness-intake` skill's flags, with precedence
-`pdr_rtv > bestofn > standard`.
-
-Because Codex has no native "pipeline phase verdict gate" primitive (see
-Iron Law 5, above), phase advancement here is entirely
-**orchestration-script-gated**: `scripts/codex-harness` (the orchestrator
-entrypoint) drives `scripts/lib/phase-order.sh` through this exact sequence,
-invoking `codex exec --profile <role> --cd <worktree> --sandbox
-workspace-write --output-schema <phase-verdict-schema.json>` per phase,
-parsing the verdict JSON, and refusing to advance to the next phase without
-a passing verdict written to `pipeline-state/{task-id}/{phase}.md`.
-
-## Work-Class Routing (T0-T6)
-
-`harness-intake` (Step 1.5, Fingerprint) classifies every request into
-seven tiers. T0-T3 bypass full pipeline dispatch; T4-T6 enter at
-progressively heavier dispatch. Dispatch targets below are ported skill
-names, invoked by `$skill-name` mention in the assembled prompt (Codex's
-own skill-selection logic then loads the matching `.agents/skills/<name>/SKILL.md`).
-
-| Tier | Class | Dispatch target |
-|---|---|---|
-| **T0** | Question / Spike | Direct answer or `$harness-tech-spike` |
-| **T1** | Doc-only | Lightweight worktree invocation (tracked-doc edits) |
-| **T2** | Config-only | `$harness-harness-config` |
-| **T3** | Mechanical sweep | `$harness-batch-pipeline` |
-| **T3H** | Trivial code change | `$harness-pipeline` (trimmed: Build + diff-only code-review + Ship) |
-| **T4** | Bug fix | `$harness-pipeline` (lightweight) |
-| **T5** | Standard feature | `$harness-pipeline` (standard) |
-| **T6** | Critical / cross-cutting | `$harness-pipeline` (heavy: Best-of-N or PDR-RTV) |
-
-## Agent Team
-
-Ported roles, phases, and worktree requirement from the Claude harness's
-Agent Team table. `Default Model` is **TBD** for every row, pending a fresh
-Codex cost-quality calibration pass — Codex's model lineup (`gpt-5.6`,
-`gpt-5.6-terra`, `gpt-5.4`, `gpt-5.3-codex-spark`) and reasoning-effort
-levels (`minimal`/`low`/`medium`/`high`/`xhigh`/`max`/`ultra`,
-model-dependent) do not map 1:1 onto the source harness's opus/sonnet/haiku
-tiering (PLAN.md §7 Risks). Do not naively rename Claude's per-role model
-defaults onto this table until that calibration pass runs.
-
-| Agent | Phase | Worktree | Default Model |
-|-------|-------|----------|---------------|
-| architect | Plan | No | TBD |
-| architect-context-recon | Plan (recon) | No | TBD |
-| code-reviewer | Build (code-review) | No | TBD |
-| database-engineer | Build | Yes | TBD |
-| fix-engineer | Build (in-cycle) | Yes | TBD |
-| frontend-engineer | Build | Yes | TBD |
-| infrastructure-engineer | Build | Yes | TBD |
-| patch-critic | Final Gate | No | TBD |
-| pbt-engineer | Build | Yes | TBD |
-| plan-cache-adapter | Plan | No | TBD |
-| planning-agent | Build (advisory) | No | TBD |
-| product-reviewer | Accept | No | TBD |
-| qa-engineer | Test | Yes | TBD |
-| sandbox-verify-engineer | Build | No | TBD |
-| security-engineer | Security Review | No | TBD |
-| session-memory-updater | Post-phase | No | TBD |
-| software-engineer | Build | Yes | TBD |
-| spec-blind-validator | Final Gate | No | TBD |
-| vlm-critic | Final Gate | No | TBD (DROPPED for now — see Runtime Model, below) |
+There is no orchestrator here driving a phase-verdict state machine. A
+session works one task vertically: TDD (RED before GREEN, per
+`$harness-build-implementation`), the code shape rules above, then your
+own `$harness-code-review` and `$harness-security-review` self-review
+passes (either order — both are read-only checklists over the same diff,
+run by you, not a separate reviewer), then verify/ship or hand back via
+`HANDOFF.md`. "No phase skipped" (Iron Law 5) means you don't skip a step
+in that sequence for yourself — there is no gate that would catch you if
+you did.
 
 ## Runtime Model
 
-`scripts/codex-harness` is the orchestrator (not yet built in this repo —
-ships in Phase 2, CX-21). It never writes source code itself (Iron Law 3
-substitute, above). It only:
+Codex is a fallback **contractor**: it picks up work when the Claude
+harness's usage window runs out, and hands work back when Claude returns.
+Claude is primary and does the vast majority of pipeline work; Codex is
+invoked only for shift coverage. This narrows the port's goal
+considerably from an independent orchestration layer to a **shared
+runtime state + handoff kit**:
 
-- creates/removes git worktrees (`scripts/lib/dispatch-agent.sh`, CX-22),
-- assembles prompts (skill body + agent role file + instincts + session
-  memory + scratchpad + the prior phase's `## Next Phase Input`),
-- invokes `codex exec --profile <role> --cd <worktree> --sandbox
-  workspace-write --output-schema <phase-verdict-schema.json> "<assembled
-  prompt>"`,
-- parses the verdict JSON (`scripts/lib/verdict-parse.py`, CX-23) and
-  writes `pipeline-state/{task-id}/{phase}.md`,
-- decides the next phase per the Pipeline Phase Order above
-  (`scripts/lib/phase-order.sh`, CX-25).
+**Shared `HARNESS_DATA` root.** Both harnesses point at ONE data root,
+`${HARNESS_DATA:-$HOME/.claude}` — the SAME directory the Claude harness
+uses for `$CLAUDE_PLUGIN_DATA`, not a separate `$CODEX_HOME/harness-data`
+tree. `pipeline-state/`, the learning observations log, and any other
+runtime state are the same files on disk for whichever side is on shift —
+one copy of truth, no sync job, no drift to reconcile. Every native hook
+in `.codex/hooks/` resolves state against this shared root via
+`.codex/hooks/_lib/harness-paths.sh` (`HARNESS_DATA` for runtime state,
+`HARNESS_ROOT` for reusing the Claude-side code install where a hook
+delegates rather than reimplements — see `learning-gc.sh` in § Non-LLM
+Gates on Destructive Verbs, above), never a repo-local copy.
 
-**Parallel dispatch** (Best-of-N, multi-slice Build) becomes N parallel
-`codex exec` invocations, one per worktree, backgrounded by the
-orchestration script (`&` + `wait`) — this mirrors the Claude harness's
-"parallel subagent calls in a single message" default dispatch mode. Codex
-has no visible-team/tmux-pane equivalent; every dispatch here is the
-parallel-subagent default.
+**The handoff coordination surface.** A `HANDOFF.md` contract plus an
+`ACTIVE_HARNESS` baton file (both fully specified in
+`pipeline-state/HANDOFF-CONTRACT.md`) coordinate the shift change:
 
-**Runtime state** lives under `${HARNESS_DATA:-$HOME/.claude}` — the SAME
-directory the Claude harness uses for `$CLAUDE_PLUGIN_DATA`, not a
-separate `$CODEX_HOME/harness-data` tree. This is a deliberate consequence
-of the contractor model (see `pipeline-state/HANDOFF-CONTRACT.md`, CX-70
-through CX-73): Codex is a fallback contractor invoked when the Claude
-harness's 5-hour usage window runs out, not a parallel independent
-harness, so `pipeline-state/`, `session-memory/`, and the learning
-observations log need to be the same files on disk for whichever side is
-on shift — one copy of truth, no sync job, no drift to reconcile. A
-`HANDOFF.md` + `ACTIVE_HARNESS` baton file (both documented in
-`pipeline-state/HANDOFF-CONTRACT.md`) coordinate the shift change and
-warn against concurrent writers.
+- `$HARNESS_DATA/ACTIVE_HARNESS` — single line, `<claude|codex>
+  <ISO 8601>`, naming which harness currently holds the baton. Advisory
+  (a warn, not a hard block) — a stale baton from a crashed session must
+  not permanently lock the other harness out.
+- `$HARNESS_DATA/pipeline-state/{task-id}/HANDOFF.md` — additive prose
+  context (Done / In Flight / Next Actions / Landmines), NOT the source of
+  truth. `pipeline-state/{task-id}/pipeline.md` remains the
+  machine-readable truth for phase/verdict state. Whoever picks up a
+  `HANDOFF.md` MUST reconcile it against git ground truth before trusting
+  it (branch exists, worktree exists or gets re-created, tests actually
+  pass as claimed) — on any conflict, git and test reality win over prose.
+
+**Picking up work**: run `$harness-resume-handoff` — see
+`.agents/skills/harness-resume-handoff/SKILL.md` for the full procedure
+(check the baton, find the handed-off `HANDOFF.md`, reconcile against git,
+continue `Next Actions` vertically, capture a `source: codex` observation,
+wrap with a return `HANDOFF.md` and a baton flip back to `claude`). Codex
+has no subagent/worktree dispatch equivalent to the Claude harness's
+parallel-subagent default — every step runs in this single session.
 
 This preserves the same seed-vs-runtime split the Claude harness already
-uses: this repo ships only curated seed (skills, agent TOML configs,
-seeded memory index config); runtime state (pipeline-state,
-session-memory, metrics, per-task learning artifacts) is never committed
-back to this repo, regardless of which harness wrote it.
-
-**Vision/screenshot-diff work** (`vlm-critic`, `design-qc`) is DROPPED for
-now — Codex's tool surface for vision/computer-use was not confirmed in the
-verified doc set at plan time (`<unverified>`); revisit after a dedicated
-probe (see PLAN.md §5 CX-90/CX-91 and §1 "What is impossible").
+uses: this repo ships only curated seed (skills, hooks, rules, config);
+runtime state (`pipeline-state/`, the learning log, metrics) is never
+committed back to this repo, regardless of which harness wrote it.
 
 ## Sandbox / Permission Posture
 
-`codex exec` defaults to **read-only**. Build-phase invocations must
-explicitly request `workspace-write` via the orchestration script's `codex
-exec --sandbox workspace-write` flag. `danger-full-access` is never used
+`codex exec` defaults to **read-only**. Explicitly request `workspace-write`
+for any session that will edit files. `danger-full-access` is never used
 outside a documented, isolated runner — treat any invocation requesting it
 as a stop-and-report event, same posture as this harness applies to
 bypassing a blocked gate (see Iron Law 8, above).
-
-## Autonomous Intelligence
-
-Three systems make the pipeline self-improving, ported at full fidelity
-from the Claude harness (their real mechanism was always
-orchestrator-side/script-side string concatenation, not a hook mutation —
-so nothing is lost in the port):
-
-| System | Scope | Purpose |
-|--------|-------|---------|
-| **Pipeline Scratchpad** | Within one pipeline | Agents share discoveries in real-time via `pipeline-state/{task-id}/scratchpad/` |
-| **Session Memory** | Across compaction | Engineering context survives context compression |
-| **Continuous Learning** | Across pipelines | Observations → instincts → better agent prompts (auto-invokes `$harness-learn`) |
-
-Instinct injection, agent memory, and session-memory splicing into a spawn
-prompt are done entirely by the orchestration script's prompt-assembly step
-(`scripts/lib/instinct-inject.py`, a port of the source harness's
-`hooks/_lib/instinct_loader.py` resolver logic) — this runs BEFORE each
-`codex exec` call and concatenates the rendered `## Learned Patterns` block
-into the assembled prompt, in the same position the source harness's Agent
-Spawn protocol uses: skill → agent definition → instincts → agent memory →
-session memory → scratchpad → scratchpad-write-instruction. Codex hooks
-parse but skip `prompt`/`agent` handler types and have no confirmed
-`modified_tool_input` equivalent, so this cannot be a mid-session hook
-mutation on Codex — it must be, and always effectively was, orchestrator-side
-string concatenation before the agent ever sees the prompt.
 
 ## Definition of Done
 
@@ -440,9 +401,10 @@ A unit of work is done when ALL of the following hold:
 
 - Every acceptance criterion is covered by a failing-then-passing test in
   the diff (Iron Law 1).
-- All reviewers (code-reviewer, security-engineer, product-reviewer as
-  applicable) return an APPROVE verdict.
-- The pull request is merged.
-- Reflection has run and produced an observation (Iron Law 7) — no
-  exceptions, successes and failures both.
-
+- Your own `$harness-code-review` and `$harness-security-review` passes
+  both reach APPROVE.
+- The pull request is merged (or, for a mid-shift handoff, a return
+  `HANDOFF.md` is written and the baton is flipped back to `claude`).
+- An observation has been appended to the shared learning log with
+  `"source": "codex"` (Iron Law 7) — no exceptions, successes and
+  failures both.

@@ -23,6 +23,3 @@
 *.jpg    binary
 *.sqlite binary
 *.db     binary
-
-# Machine-written artifacts: keep out of human review noise
-eval/baselines/*.md linguist-generated=true

@@ -23,21 +23,18 @@ Automated pull request creation with validation:
 5. Create GitHub PR with proper formatting
 6. Return PR URL
 
-## Known Misfire Mode
+## Known Misfire Mode (Claude-side history, kept for the description-shape lesson)
 
-**Symptom**: On the first Ship-phase dispatch the skill returns "standing by" (or an equivalent ack-only response) instead of executing Steps 0-5 below. No branch is created. No PR is opened. The pipeline stalls at the Ship gate with no verdict.
-
-**Suspected root cause (not yet proven)**: the model-invocation routing layer scans the skill `description` field for action cues. Skills that auto-invoke reliably (e.g. `/harness:internal-eval`, `/harness:build-implementation`, `/harness:code-review`, `/harness:security-review`, `/harness:verify`, `/harness:product-acceptance`, `/harness:patch-critique`, `/harness:learn`) all start their description with the literal phrase `"Use when user wants to ..."`. Before this fix the pr-creation description started with `"GitHub pull request workflow ..."` — no `"Use when ..."` cue, no `argument-hint`, no `## Process` anchor. Without those, the skill body may have been loaded as reference documentation rather than an executable procedure.
-
-**Workaround (when the misfire still recurs after the description fix)**:
-1. Orchestrator dispatches a `fix-engineer` directly with a build-style spawn whose prompt is the literal contents of this SKILL.md's Steps 0-5.
-2. Pass `Working directory: <worktree-path>` and the original task-id in the spawn prompt so the approval-token gate + worktree precondition both resolve.
-3. Treat the fix-engineer's PR-URL return value as the `PR_CREATED` verdict for the Ship-phase state file. Manually write `$state_dir/{task-id}/ship.md` with `verdict: PR_CREATED` and the PR URL.
-
-**Action note for operators investigating recurrences**:
-- Compare this skill's frontmatter + body shape against `.agents/skills/harness-internal-eval/SKILL.md` and `.agents/skills/harness-learn/SKILL.md` — both auto-invoke reliably.
-- Diff candidates to investigate: `description` prefix wording, presence of `## Process` heading with numbered `### Step N:` sub-headings, presence of `argument-hint`, presence of `disable-model-invocation` (only `deploy` sets this — confirms it's NOT load-bearing for normal dispatch).
-- If you reproduce the misfire and prove the root cause, remove this section and tighten the regression guard in `tests/test_pr_creation_skill_frontmatter.py`.
+On the Claude harness, this skill's model-invocation routing once misfired
+when the `description` field lacked an action cue (`"Use when user
+wants to ..."`) — the skill body loaded as reference documentation
+instead of an executable procedure. This repo's frontmatter (description
++ `argument-hint` + `## Process`-shaped body) already follows the fixed
+convention. If a Codex session ever "stands by" instead of executing
+Steps 0-5 below, that same description-shape issue is the first thing to
+check; there is no orchestrator-side workaround on Codex (no
+`fix-engineer` role to hand this to) — re-invoke the skill directly, or
+work the steps below manually if invocation keeps failing.
 
 ## Prerequisites
 
@@ -47,7 +44,12 @@ Automated pull request creation with validation:
 
 ## Step 0 — Approval Token Gate (HARD GATE)
 
-Before any branch operations, verify that `/harness:product-acceptance` has authorized this PR:
+Before any branch operations, verify an approval token authorizes this
+PR. On the Claude side, a `product-acceptance` phase writes this token;
+this repo does not carry that skill (it is Plan/Accept-phase machinery,
+out of scope for the contractor kit), so treat a missing token the same
+as the "No active pipeline" case below rather than trying to author one
+yourself:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/hooks/_lib/approval-token.sh"
@@ -446,28 +448,15 @@ Verify `gh auth status`, re-authenticate if needed, retry.
 ### Remote branch conflicts
 Pull latest main, rebase feature branch, resolve conflicts, push with `--force-with-lease`.
 
-## Spec-Blind Validation
-
-Every PR body includes a `## Spec-Blind Validation` section reflecting the spec-blind-validator's verdict from the Final Gate. The validator runs as a 5th Final Gate teammate that authors black-box behavioural tests from the AC plan + public API surface ONLY — never from `src/` internals.
-
-The section's content depends on the verdict:
-
-- **SPEC_BLIND_VALIDATED** — `spec-blind validator passed: independent test suite cross-validates the build-time tests.`
-- **SPEC_BLIND_INSUFFICIENT_SURFACE** — `spec-blind validator was skipped — no public-surface artifacts found in this repo. See SKILL.md § Future Work for V2 harness-aware path.`
-- **SPEC_BLIND_FAILED** — should not appear in a merged PR (gate must pass before Ship); included here for forensic traceability if the gate was suppressed.
-- **SPEC_BLIND_BLOCKED** — should not appear in a merged PR (HALT pipeline routing per `protocols/verdict-catalog.md`); included here for operator visibility on suppressed-gate forensics.
-
-The section makes the no-op visible — silent skips would let the gate become unattended on convention-poor projects (per the plan's AC18 mitigation).
-
 ## Decision Narrative
 
 Every PR includes a non-technical decision narrative section:
 
-1. **Collect agent summaries**: Include a summary request in the original agent spawn prompt: "Before finishing, output a '## Agent Summary' section with 2-3 sentences on what you did, decisions made, and trade-offs." The orchestrator collects these summaries from agent outputs after completion.
+1. **Write a summary of your own work**: before finishing, write 2-3 sentences on what you did, decisions made, and trade-offs — there is no separate agent output to collect this from.
 2. **Assemble into PR body** under a "## Decision Log" section:
    - **What**: What was built and why (business context)
    - **Why**: Key decisions and trade-offs (what was considered and rejected)
-   - **How**: How each agent contributed (design rationale, review findings)
+   - **How**: Design rationale, review findings from your own `$harness-code-review`/`$harness-security-review` pass
    - **Verified**: Verification report summary in plain language
 3. Must be readable by non-technical stakeholders (product owners, designers)
 
@@ -500,10 +489,10 @@ When the pipeline provides a manifest path, this skill creates linked PRs:
    - Depended on by: {org}/{consumer-repo}#{N}
    ```
 4. **Apply labels**: From manifest `## Services > GitHub > labels` if configured
-5. **Return all PR URLs**: The orchestrator tracks them in the pipeline state PR Manifest
+5. **Return all PR URLs**: Record them yourself in the pipeline state PR Manifest — there is no orchestrator tracking this on your behalf.
 
 ### Merge Order
-The orchestrator handles merge ordering — this skill only creates PRs. It adds a `## Merge Order` note to each PR body so human reviewers understand the dependency.
+This skill only creates PRs; it does not merge them. It adds a `## Merge Order` note to each PR body so human reviewers (or whichever harness picks up the merge step) understand the dependency.
 
 ## Best Practices
 
@@ -518,9 +507,8 @@ The orchestrator handles merge ordering — this skill only creates PRs. It adds
 
 ## Prerequisite
 
-- Accept phase complete: `/harness:product-acceptance` returned APPROVED
-- All prior phase verdicts: BUILD_COMPLETE, APPROVE (both reviews), VERIFIED, COVERED, APPROVED
-- Approval token written by /harness:product-acceptance (verified at Step 0 above).
+- Build/fix work complete: BUILD_COMPLETE, APPROVE (both `$harness-code-review` and `$harness-security-review`)
+- If this PR is part of a full Claude-orchestrated pipeline, its Accept-phase approval token exists (Step 0 above handles the "no active pipeline" case when it doesn't)
 
 ## Verdict
 

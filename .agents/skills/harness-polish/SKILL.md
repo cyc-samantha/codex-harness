@@ -10,32 +10,24 @@ model: haiku
 
 ## What This Skill Does
 
-A fast, cheap cleanup pass that runs between Build and Review. Fixes only mechanical issues — naming, dead code, import ordering, commented-out blocks, unused variables. Does NOT touch design, architecture, or logic.
+A fast, cheap cleanup pass that runs after Build, before the code-review /
+security-review self-review passes. Fixes only mechanical issues —
+naming, dead code, import ordering, commented-out blocks, unused
+variables. Does NOT touch design, architecture, or logic.
 
-The insight: self-review is author-biased. The same agent that wrote the code is the worst judge of its own sloppiness. A separate agent with fresh eyes catches mechanical issues the builder missed.
+The original insight (self-review is author-biased) still applies, but a
+single-thread contractor has no separate agent to hand this to for fresh
+eyes. Compensate by treating this as a genuinely SEPARATE pass: re-read
+the diff top-to-bottom as if you had not written it, looking ONLY for the
+mechanical issues below — do not re-litigate design decisions here, that
+is `$harness-code-review`'s job.
 
-## When to Invoke
+## When to Run
 
-- After Build completes (BUILD_COMPLETE) and before Review dispatch
-- Only when Complexity Budget >= 7 (non-trivial tasks)
-- Skipped for micro/small pipelines (Budget 5-6)
-- Invoked by the pipeline orchestrator, not manually
-
-## Dispatch
-
-Spawn as subagent with `isolation: "worktree"`, model `haiku`, max 15 turns:
-
-```
-Agent({
-  subagent_type: "software-engineer",
-  isolation: "worktree",
-  model: "haiku",
-  prompt: "Read .agents/skills/harness-polish/SKILL.md and execute it fully.
-    Read ~/.claude/agents/software-engineer.md for your role definition.
-    Context: branch [branch], base main.
-    Changed files: [git diff --name-only main...HEAD]"
-})
-```
+- After the build/fix work is functionally complete, before
+  `$harness-code-review` / `$harness-security-review`.
+- Skip for genuinely trivial diffs (a handful of lines with nothing to
+  mechanically clean up) — this pass earns its keep on non-trivial diffs.
 
 ## Process
 
@@ -64,7 +56,7 @@ For comments, **FLAG but do NOT auto-delete**:
 **NEVER touch**:
 - Doc-comments (`/** */`, `///`, `"""…"""`), license/copyright headers — preserve exactly
 - `# WHY:` / `# SAFETY:` / `# NOTE:` prefixed comments — these are legitimate WHY notes
-- Any comment the polish agent cannot confidently classify as a WHAT restatement
+- Any comment you cannot confidently classify as a WHAT restatement
 
 ### 3. Do NOT Touch
 
@@ -93,6 +85,6 @@ Polished N files:
 
 ```
 Verdict: POLISHED / NO_CHANGES_NEEDED
-Next: /harness:code-review + /harness:security-review (parallel)
+Next: run $harness-code-review and $harness-security-review yourself (inline self-review, either order)
 Artifacts: [list of files cleaned, changes per file]
 ```

@@ -48,7 +48,7 @@ Where tiers are independent, run them in parallel:
 - Tier 1 (Contract) and Tier 2 (Smoke) can often run simultaneously
 - Tier 3 (Mutation) depends on test results from Tier 1/2, so runs after
 - Tier 4 (E2E) is independent of Tier 3 and can run in parallel with it
-- Use parallel Bash calls or parallel agent spawns for independent tiers
+- Use parallel Bash calls for independent tiers where the tool surface allows it; otherwise run tiers sequentially in this same session — there is no separate agent to spawn per tier
 
 ### 1. Identify Feature Type
 
@@ -159,7 +159,7 @@ where the denominator excludes `equivalent: yes` mutants. **kill_rate ≥ 0.60 r
 
 **Audit-trail invariant**: Tier 3.5 results **APPEND to the existing mutation report**, placed **below any Kill-Loop rounds** (i.e., after the last `### Kill-Loop Round N` section written by the Build-phase Mutation Kill Loop, as defined in `atdd-procedure.md` step 4). They do NOT generate a new report file. The audit-trail count locked by `protocols/atdd-procedure.md` (3 artifacts: batched RED, GREEN, mutation-report) is preserved. Do NOT append between the Tier-3 baseline and the Kill-Loop rounds — that would interleave Build-phase and Final-Gate content in the same artifact.
 
-**Cross-reference**: `orchestrator/parallel-dispatch-details.md` § Multi-Persona Patch Critic Dispatch / Execution Evidence reuses the same call-shape pattern documented in this section (ONE call, NO retry, max-N items per response, JSON schema, parse-failure → silent skip). The procedure body above is the canonical wording source; the patch-critic execution-evidence layer inlines + adapts it. Tier 3.5's verify-time semantics are unchanged by that reuse.
+**Call-shape discipline**: ONE call, NO retry, max-N items per response, JSON schema, parse-failure → silent skip. This is the same discipline applied anywhere else in this harness that renders a bounded LLM-judged batch (e.g. the SAST triage loop in `$harness-security-review` § 0.3) — keep it consistent if you extend this section.
 
 **Citations:**
 - arXiv 2406.09843 (Wang et al., 2024) — LLM-generated mutants achieve 87.98% fault detection vs 41.64% rule-based (46.3 pp lift) on a comprehensive benchmark; motivates Tier 3.5 as additive to Tier 3.
