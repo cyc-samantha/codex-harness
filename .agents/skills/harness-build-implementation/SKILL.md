@@ -2,7 +2,6 @@
 name: "build-implementation"
 description: "Structured Build-phase TDD implementation: RED-GREEN-REFACTOR per slice, mutation kill loop. Use when implementing acceptance criteria after a plan is approved."
 context: fork
-agent: software-engineer
 argument-hint: "Acceptance criteria or story to implement"
 ---
 
@@ -10,11 +9,14 @@ argument-hint: "Acceptance criteria or story to implement"
 
 ## What This Skill Does
 
-Prescribes the exact procedure for the Build phase of the delivery pipeline. Engineers consume the architect's per-AC failing-test stub list, implement each slice via the ATDD cycle (two test invocations per slice plus a mutation gate), and enforce cohesion-based shape rules continuously.
+Prescribes the exact procedure for build work: consume the per-AC failing-test stub list (from a plan you wrote or one handed off in `HANDOFF.md`), implement each slice via the ATDD cycle (two test invocations per slice plus a mutation gate), and enforce cohesion-based shape rules continuously.
 
-## Dispatch Mode
+## Where This Runs
 
-This skill is dispatched via the Agent tool with `isolation: "worktree"`. The orchestrator NEVER invokes this skill via the Skill tool directly. The agent reads this file and executes it in an isolated worktree.
+Do this work inside a git worktree (see AGENTS.md § Worktree + Commit
+Protocol) — never directly against the checkout you started the session
+in. There is no separate agent to dispatch this to; you read this file
+and execute it yourself, in the worktree, single-thread.
 
 ## Procedure
 
@@ -34,7 +36,7 @@ If the implementation requires new packages not yet in `package.json`:
 3. Commit `package.json` and lock file separately: "chore: add <package> for <reason>"
 4. Proceed with the batched-RED step — the first failing batch validates the dependency works.
 
-If the orchestrator's prompt specifies dependencies, install them here. If you discover a needed dependency during implementation, install it at that point.
+If a handed-off `HANDOFF.md` names a dependency in its `Next Actions`, install it here. If you discover a needed dependency during implementation, install it at that point.
 
 ### Step 1c: Write Contract Assertions (Tier 0 — Spec-as-Contract)
 
@@ -57,20 +59,16 @@ For each contract in the list:
 
 The Tier-0 RED output is a separate capture from the Step-2 BATCHED RED output. Both are required as audit artifacts for the slice (per `protocols/atdd-procedure.md` § Audit Trail).
 
-### Step 1d: Author Property-Based Tests (Tier 1.5)
+### Step 1d: Property-Based Tests (out of scope for this kit)
 
-Inserted between Tier 0 contract assertions (Step 1c) and Step 2 batched RED. Authors Tier 1.5 property-based tests for every public function on changed lines with a typed signature. Auto-invoked on every Build run unless `CLAUDE_PBT=0`. The output files match the existing `tests/**/*.property.{spec,test}.*` glob byte-for-byte so Step 2b cap-detection (5→3) fires automatically against the just-authored properties.
-
-Procedure:
-
-1. Invoke `/harness:property-based-test` (see `skills/property-based-test/SKILL.md`). The skill spawns `pbt-engineer` in your worktree (worktree-reuse, mirrors `fix-engineer`).
-2. The engineer identifies candidate functions from `git diff --name-only` (public, typed signature, on changed lines), picks the harness from the language → framework table, generates ≥1 property per candidate from one of `{idempotence, inverse, oracle, metamorphic}`, time-boxes 60s/function, and freezes any counterexamples inline using harness-native syntax (`@example`, seeded `fc.assert`, frozen `?FORALL`).
-3. Read the verdict and act accordingly:
-   - **`PBT_AUTHORED`** — ≥1 property authored. Proceed to Step 2.
-   - **`PBT_SKIPPED`** with reason `env-hatch` (operator set `CLAUDE_PBT=0`), `no-candidates` (no public-typed-changed-line functions), or `no-framework-for-language` (language has no shipped harness or harness not installed). All three skip reasons are benign — proceed to Step 2.
-   - **`PBT_BLOCKED`** with reason `harness-crash` or `unrecoverable-error` — HALT Build. Surface the verdict payload (function name, 5-line error excerpt, `CLAUDE_PBT=0` recovery action, retry-twice-then-escalate exemption per `protocols/operational-protocol.md`) to the orchestrator.
-
-**Escape hatch.** Set `CLAUDE_PBT=0` in the environment to disable Step 1d — this skips PBT authoring entirely. The hatch exists for the soak window (default-on) so cycle-time impact can be measured before flipping to mandatory; it is the one-line revert path if pbt-engineer introduces unexpected runtime cost.
+The dedicated property-based-testing skill was cut in the Phase 8 cull
+(the contractor kit does not carry a `pbt-engineer` role or a
+`property-based-test` skill) — this step is a no-op here. If a function
+you are implementing has an obvious property worth asserting
+(idempotence, inverse, an oracle comparison, a metamorphic relation) and
+the project already has a property-testing library installed (`fast-check`,
+`hypothesis`, `PropEr`, etc.), write it inline as an ordinary test in
+Step 2 rather than invoking a separate procedure for it.
 
 ### Step 2: Implement Slice via ATDD (Two test invocations per slice)
 
@@ -133,7 +131,7 @@ Walk these 5 categories IN ORDER:
 - **passes immediately = delete.** An adversarial that goes GREEN on its first run without any production-code change has no diagnostic value — the existing tests already cover the case, or the named edge does not actually exist on the changed lines. Delete it; do not keep it as a vanity test.
 - **HALT if adversarial reveals contract gap.** If an adversarial surfaces a behavior the AC does not specify (e.g., what should happen on negative input when the AC is silent), HALT and surface to the architect. Do not invent the contract — the architect owns the spec, the engineer owns the implementation.
 
-**PBT overlap.** When a function has **Tier 1.5** property-based tests covering it (per `protocols/engineering-invariants.md` § Proof of Correctness), **cap reduces from 5 to 3** for that function. PBTs already exercise boundary values and null/empty cases at the property level; adversarials should focus on **error-path + concurrency** which PBTs cover poorly. Detection is mechanical — file glob `tests/**/*.property.{spec,test}.*` next to the changed file → cap=3. Step 1d now produces those PBTs in-pipeline (auto-invoked unless `CLAUDE_PBT=0`), so the cap-reduction fires by default on every PBT-eligible function.
+**PBT overlap.** When a function already has property-based tests covering it (whether you wrote them earlier in this slice or they pre-existed), **cap reduces from 5 to 3** for that function — property tests already exercise boundary values and null/empty cases; adversarials should focus on **error-path + concurrency**, which property tests cover poorly. Detection is mechanical — file glob `tests/**/*.property.{spec,test}.*` next to the changed file → cap=3.
 
 After adversarials are GREEN, return to Step 2's MUTATION GATE on the **union suite** (architect stubs + adversarials).
 
@@ -279,7 +277,6 @@ Before declaring the build complete:
 - [ ] ATDD audit trail visible (batched RED + GREEN + mutation report ≥ 70%)
 - [ ] Mutation Kill Loop ran (per atdd-procedure.md step 4 Mutation Kill Loop); OUTCOME recorded as `REACHED`, `EXHAUSTED`, or `NO_PROGRESS` in the mutation report header; on non-`REACHED` the gate failed and kill-tests + residuals handed back in-cycle via `CLAUDE_MUTATION_KILL_BUDGET_SECONDS` (default 300)
 - [ ] Step 2b ran with the correct cap for the slice's task class (greenfield: default-on, cap=5; refactor: opt-in via `CLAUDE_ADVERSARIAL_TESTS_REFACTOR=1`, cap=3), OR was skipped per `CLAUDE_ADVERSARIAL_TESTS=0` (master kill-switch), OR is N/A for a bug-fix slice
-- [ ] Step 1d ran (PBT_AUTHORED or PBT_SKIPPED), OR was skipped per `CLAUDE_PBT=0`
 - [ ] Step 2c in-loop scan ran on each commit (BUILD_SCAN_PASSED/BUILD_SCAN_SKIPPED, never an unremediated BUILD_SCAN_BLOCKED), OR was bypassed per `CLAUDE_DISABLE_BUILD_LOOP_SCAN=1`
 - [ ] If changes touch URL/auth/nav/WebView files: note that E2E will be required in Verify phase (see `protocols/e2e-protocol.md` trigger matrix)
 - [ ] If `/harness:tool-synthesis` was invoked: `register.sh --cleanup ${WORKTREE}` ran AND `git status` shows no `.claude-scratch-tools/` entries
@@ -287,23 +284,23 @@ Before declaring the build complete:
 
 ## Worktree Isolation
 
-All engineers spawned during Build MUST use `isolation: "worktree"`:
+Build work happens in a git worktree (see AGENTS.md § Worktree + Commit
+Protocol):
 
-```
-Agent({
-  subagent_type: "frontend-engineer",
-  isolation: "worktree",
-  prompt: "Implement [AC] following incremental TDD...
-    Also read the project's tech stack pattern file if one exists
-    at .agents/skills/harness-[stack]-patterns/SKILL.md for tech-specific guidance."
-})
+```bash
+git worktree add "$WORKTREE_PATH" -b build/<task-id>-<slice>
 ```
 
-**Parallel worktrees for independent slices:**
-- If multiple ACs are independent (no shared files), spawn separate engineers in parallel worktrees
-- Each worktree gets its own isolated copy of the repo
-- Use a single message with multiple Agent calls to maximize parallelism
-- If ACs share files, implement sequentially — merge first worktree before starting next
+Also read the project's tech stack pattern file if one exists at
+`.agents/skills/harness-[stack]-patterns/SKILL.md` for tech-specific
+guidance before starting.
+
+**Independent slices.** A single-thread contractor works ACs one at a
+time, not in parallel worktrees. If multiple ACs are independent (no
+shared files), pick an order and work them sequentially — commit one
+slice before starting the next. If ACs share files, this ordering
+constraint is even more important: finish and commit the first slice
+before touching the shared file for the second.
 
 ## Anti-Patterns
 
@@ -315,9 +312,9 @@ Agent({
 
 ## Prerequisite
 
-- Plan phase complete: story/AC defined (from `/harness:epic-breakdown` or `/harness:story-writing`)
-- OR: refactoring target identified (use `/harness:refactor` instead)
-- OR: bug reproduction steps known (use `/harness:bug-fix` instead)
+- The story/AC list is defined — either from a plan Claude wrote before handing off (per `HANDOFF.md` § Next Actions), or from a task description the user gave you directly
+- OR: refactoring target identified (use `$harness-refactor` instead)
+- OR: bug reproduction steps known (use `$harness-bug-fix` instead)
 
 ## Self-Review Gate (Mandatory Before Completion)
 
@@ -385,55 +382,44 @@ When the iteration counter reaches `MAX_ITER` (cap exceeded):
 2. Emit verdict `BUILD_FAILED` with
    - `reason: iteration_cap_exhausted`
    - `handoff: $state_dir/{task-id}/build-handoff.md`
-   The orchestrator detects this verdict + reason and dispatches `/harness:bug-fix` per `protocols/pipeline-protocol.md` § In-Cycle Fix Rule. The build agent does NOT invoke `/harness:bug-fix` directly (Skill is in the build agent's disallowedTools).
+   Then, in this same session, switch to `$harness-bug-fix` using the
+   written handoff as the bug report. There is no separate agent to
+   dispatch it to — you are the one continuing.
 3. Escape-hatch: `CLAUDE_BUILD_ITERATIONS=0` SKIPS the loop entirely — first RED at Step 4a writes the handoff (single entry: current failure) and emits `BUILD_FAILED reason: iteration_loop_disabled`.
 
-The exhaustion path is NOT deferral — `/harness:bug-fix` runs within the same pipeline per Iron Law 6.
+The exhaustion path is NOT deferral — `$harness-bug-fix` runs within this same session, immediately, per Iron Law 6.
 
 ## Step 5: Inline Code Review (mandatory before BUILD_COMPLETE)
 
-After the self-review checklist passes, the build agent (or orchestrator on its behalf) dispatches `/harness:code-review` inline. Code-review is no longer a separate phase boundary — it runs as the final step of Build because the value-add is "second model with different priors", not a phase gate.
+After the self-review checklist passes, run `$harness-code-review`
+yourself, inline, in this same session — it is a self-review checklist,
+not a second reviewer.
 
 Procedure:
-1. Dispatch `code-reviewer` agent (read-only, no worktree) per `skills/code-review/SKILL.md`.
+1. Run `$harness-code-review` against your own diff.
 2. If APPROVE → emit `BUILD_COMPLETE`.
-3. If CHANGES_REQUESTED → spawn `fix-engineer` on the same worktree, re-run the suite, re-dispatch `code-reviewer` with the original finding + fix diff. Max 2 rounds total at the current model tier. On the 3rd CHANGES_REQUESTED (round_idx==3): if fix-engineer was running at Opus (budget>=7), Round 3: downgrade to Sonnet for one final attempt; if already at Sonnet (or the Sonnet downgrade round also returns CHANGES_REQUESTED), escalate to user. Log the downgrade event to `$state_dir/{task-id}/scratchpad/fix-engineer-downgrade.md` (category: decision) AND call `hooks/_lib/fix_engineer_retry_log.py::emit_retry_record` to append a JSONL line to `metrics/{session}/fix-engineer-retry.jsonl`.
+3. If CHANGES_REQUESTED → fix the findings yourself in the same
+   worktree, re-run the suite, re-run `$harness-code-review` against the
+   updated diff. Max 2 rounds. If still CHANGES_REQUESTED after round 2,
+   escalate to the user rather than looping indefinitely.
 
-Security review is a separate phase that runs after `BUILD_COMPLETE` — do NOT dispatch `/harness:security-review` from inside Build.
-
-### Step 5b: Inline Sandbox Verify (mandatory before BUILD_COMPLETE)
-
-After Step 5 returns APPROVE, the build agent (or orchestrator on its behalf) dispatches `/harness:sandbox-verify` inline. Step 5b is the second inline gate inside Build — it confirms the worktree's pass set reproduces inside a fresh E2B sandbox so machine-specific or "works on my worktree" patches do not reach Final Gate. Like Step 5, this is a gate inside Build, NOT a separate pipeline phase.
-
-The build agent writes the build-phase state file `$state_dir/{task-id}/build.md` with three append-only sections: `## Decision Record`, `## Context for Review`, and (added by Step 5b) `## Sandbox Verify`. The exact `## Sandbox Verify` section template — including its body table with columns `Test | Worktree | Sandbox | Diff` — is documented in `### Sandbox Verify Section (Mandatory After Step 5b)` below, which appears in the file AFTER the `### Context for Next Phase` subsection so Story-4 forensics can locate the block deterministically.
-
-Procedure:
-1. **State stub first** — write the `## Sandbox Verify` section header to `$state_dir/{task-id}/build.md` BEFORE invoking the skill (state-before-expensive-op — the E2B microVM is timeout-bounded and may be killed at the wall-clock cap; the stub makes the round recoverable).
-2. Dispatch `sandbox-verify-engineer` agent via `/harness:sandbox-verify` (worktree-reuse — the engineer inherits the prior build's worktree path). The engineer parses the worktree's pytest/jest/rspec pass set, runs the same suite inside an E2B microVM, compares both pass sets, and returns one of three verdicts.
-3. Branch on verdict:
-   - **SANDBOX_VERIFIED** → write the final `## Sandbox Verify` body (per the template subsection below) and emit `BUILD_COMPLETE`.
-   - **SANDBOX_SKIPPED** with `reason ∈ {no-e2b-token, no-testable-changes, env-hatch}` → write the `## Sandbox Verify` body noting the skip reason and emit `BUILD_COMPLETE`. The three benign skip reasons are: `no-e2b-token` (no `E2B_API_KEY` available — Story-1 path), `no-testable-changes` (docs-only diff per `git diff --name-only $BASE...HEAD` against the project's testable-paths set — Story 2), and `env-hatch` (operator set `CLAUDE_DISABLE_SANDBOX_VERIFY=1` — Story 2).
-   - **SANDBOX_FAILED** → spawn `fix-engineer` on the same worktree per `protocols/pipeline-protocol.md` § In-Cycle Fix Rule, re-run the suite, then re-dispatch Step 5 code-review FIRST and Step 5b sandbox-verify SECOND with the original divergence list + fix diff. The 2-round cap is **combined with Step 5** — code-review rounds and sandbox-verify rounds share a single 2-round budget across Build (max 2 rounds total, NOT 2+2). If `current_round + 1 > 2` after a failure, escalate to the user with the divergence list. The round counter lives in the orchestrator's spawn-prompt state, NOT in `build.md` frontmatter — a `build.md` frontmatter writer would mis-persist the counter and break the combined-budget arithmetic. Round 3+ never executes inside Build.
-
-The `Test | Worktree | Sandbox | Diff` table columns and the `## Sandbox Verify` heading itself are pinned by the template subsection below — the build agent renders the same column layout on every spawn so the Story-4 forensics consumer can join rows by test name.
-
-**Section overwrite semantics — last-writer-wins.** Round 2's `/harness:sandbox-verify` spawn overwrites the `## Sandbox Verify` section in `build.md` produced by round 1 — the final state file reflects the round-2 outcome, never a merge.
-
-**Escape hatch.** Set `CLAUDE_DISABLE_SANDBOX_VERIFY=1` in the environment to skip Step 5b — `/harness:sandbox-verify` fast-exits with `SANDBOX_SKIPPED` reason `env-hatch` and appends one JSONL line to `metrics/{session-id}/sandbox-verify-skips.jsonl`. Build then proceeds to `BUILD_COMPLETE`. The hatch matches the canonical `CLAUDE_DISABLE_*=1` shape used by `CLAUDE_DISABLE_AUTO_LEARN`, `CLAUDE_DISABLE_INSTINCT_INJECTION`, and six sibling hooks.
+Run `$harness-security-review` alongside this step — do it right after
+(or before; order does not matter) in this same session, still before
+`BUILD_COMPLETE`.
 
 ## Verdict
 
 After Step 5 completes:
-- **BUILD_COMPLETE**: All ACs have passing tests, cohesion-based shape rules met, ATDD audit trail visible (RED + GREEN + mutation), code-reviewer APPROVED, AND sandbox-verify returned SANDBOX_VERIFIED or SANDBOX_SKIPPED.
-- **BUILD_FAILED**: Checklist items remain unresolved OR code-review never APPROVED after 2 rounds OR sandbox-verify never returned a non-FAILED verdict within the combined 2-round budget. List which items failed.
+- **BUILD_COMPLETE**: All ACs have passing tests, cohesion-based shape rules met, ATDD audit trail visible (RED + GREEN + mutation), and both `$harness-code-review` and `$harness-security-review` returned APPROVE.
+- **BUILD_FAILED**: Checklist items remain unresolved OR either review never reached APPROVE after 2 rounds. List which items failed.
 
 ## Phase Output
 
 ```
 Verdict: BUILD_COMPLETE / BUILD_FAILED
-Next: /harness:code-review + /harness:security-review (parallel, single message)
+Next: (already ran $harness-code-review + $harness-security-review inline above) → verify/ship/handoff
 Artifacts: [list of changed/created files]
-Agent summaries: [each engineer's 2-3 sentence contribution summary]
+Summary: [2-3 sentence contribution summary]
 ```
 
 ### Decision Record (Mandatory)
@@ -458,28 +444,10 @@ Include a `## Context for Review` section in the pipeline state file:
 ## Context for Review
 - **Uncertainty flags**: [areas where the build agent is unsure — "I chose X but Y might be better"]
 - **TDD audit summary**: [N tests added, key behaviors covered, any gaps noted]
-- **Learned patterns applied**: [instincts from learning/instincts/ that influenced decisions]
+- **Learned patterns applied**: [instincts from `$HARNESS_DATA/learning/instincts/` that influenced decisions]
 - **Areas needing focus**: [specific files or patterns the reviewer should scrutinize]
 ```
 
 This gives reviewers a guided entry point instead of a cold diff read.
 
-### Sandbox Verify Section (Mandatory After Step 5b)
-
-Step 5b writes one `## Sandbox Verify` section to `$state_dir/{task-id}/build.md`. The section appears AFTER the `## Context for Review` section so the Story-4 forensics consumer can locate the block deterministically. Round-2 overwrites round-1 (last-writer-wins).
-
-```markdown
-## Sandbox Verify
-- Worktree pass: 14/15  (1 failed: test_foo_bar)
-- Sandbox pass:   14/15  (1 failed: test_foo_bar)
-- Verdict: SANDBOX_VERIFIED  (or SANDBOX_SKIPPED reason=... | SANDBOX_FAILED)
-
-| Test | Worktree | Sandbox | Diff |
-|---|---|---|---|
-| test_foo_bar | FAIL | FAIL | match |
-```
-
-The pass counts are integer fractions (`worktree_pass / total_collected`). The `Diff` column is `match` when worktree and sandbox agree on a row's pass/fail status, and `diverge` otherwise — the SANDBOX_FAILED `diverging_tests` list is exactly the rows where `Diff` is `diverge`.
-
 $ARGUMENTS
-</reason></package>

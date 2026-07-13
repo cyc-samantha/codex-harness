@@ -2,7 +2,6 @@
 name: "pr-creation"
 description: "Use when user wants to ship a feature: GitHub pull request workflow with validation, feature branch management, and automated PR creation."
 context: fork
-agent: software-engineer
 argument-hint: "Optional: PR title or 'auto' to derive from commit messages"
 ---
 
@@ -23,21 +22,18 @@ Automated pull request creation with validation:
 5. Create GitHub PR with proper formatting
 6. Return PR URL
 
-## Known Misfire Mode
+## Known Misfire Mode (Claude-side history, kept for the description-shape lesson)
 
-**Symptom**: On the first Ship-phase dispatch the skill returns "standing by" (or an equivalent ack-only response) instead of executing Steps 0-5 below. No branch is created. No PR is opened. The pipeline stalls at the Ship gate with no verdict.
-
-**Suspected root cause (not yet proven)**: the model-invocation routing layer scans the skill `description` field for action cues. Skills that auto-invoke reliably (e.g. `/harness:internal-eval`, `/harness:build-implementation`, `/harness:code-review`, `/harness:security-review`, `/harness:verify`, `/harness:product-acceptance`, `/harness:patch-critique`, `/harness:learn`) all start their description with the literal phrase `"Use when user wants to ..."`. Before this fix the pr-creation description started with `"GitHub pull request workflow ..."` — no `"Use when ..."` cue, no `argument-hint`, no `## Process` anchor. Without those, the skill body may have been loaded as reference documentation rather than an executable procedure.
-
-**Workaround (when the misfire still recurs after the description fix)**:
-1. Orchestrator dispatches a `fix-engineer` directly with a build-style spawn whose prompt is the literal contents of this SKILL.md's Steps 0-5.
-2. Pass `Working directory: <worktree-path>` and the original task-id in the spawn prompt so the approval-token gate + worktree precondition both resolve.
-3. Treat the fix-engineer's PR-URL return value as the `PR_CREATED` verdict for the Ship-phase state file. Manually write `$state_dir/{task-id}/ship.md` with `verdict: PR_CREATED` and the PR URL.
-
-**Action note for operators investigating recurrences**:
-- Compare this skill's frontmatter + body shape against `.agents/skills/harness-internal-eval/SKILL.md` and `.agents/skills/harness-learn/SKILL.md` — both auto-invoke reliably.
-- Diff candidates to investigate: `description` prefix wording, presence of `## Process` heading with numbered `### Step N:` sub-headings, presence of `argument-hint`, presence of `disable-model-invocation` (only `deploy` sets this — confirms it's NOT load-bearing for normal dispatch).
-- If you reproduce the misfire and prove the root cause, remove this section and tighten the regression guard in `tests/test_pr_creation_skill_frontmatter.py`.
+On the Claude harness, this skill's model-invocation routing once misfired
+when the `description` field lacked an action cue (`"Use when user
+wants to ..."`) — the skill body loaded as reference documentation
+instead of an executable procedure. This repo's frontmatter (description
++ `argument-hint` + `## Process`-shaped body) already follows the fixed
+convention. If a Codex session ever "stands by" instead of executing
+Steps 0-5 below, that same description-shape issue is the first thing to
+check; there is no orchestrator-side workaround on Codex (no
+`fix-engineer` role to hand this to) — re-invoke the skill directly, or
+work the steps below manually if invocation keeps failing.
 
 ## Prerequisites
 
@@ -47,7 +43,12 @@ Automated pull request creation with validation:
 
 ## Step 0 — Approval Token Gate (HARD GATE)
 
-Before any branch operations, verify that `/harness:product-acceptance` has authorized this PR:
+Before any branch operations, verify an approval token authorizes this
+PR. On the Claude side, a `product-acceptance` phase writes this token;
+this repo does not carry that skill (it is Plan/Accept-phase machinery,
+out of scope for the contractor kit), so treat a missing token the same
+as the "No active pipeline" case below rather than trying to author one
+yourself:
 
 ```bash
 source "${CLAUDE_PLUGIN_ROOT:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/hooks/_lib/approval-token.sh"
@@ -270,14 +271,28 @@ EOF
 
 The eval-baseline stamp is appended to every PR body so reviewers see the latest suite pass rate + `harness_ref` SHA without per-PR reruns. See `~/.claude/skills/internal-eval/score/stamp-pr-body.sh`.
 
-### 5b. Watch remote CI (Monitor event-stream — enforcing gate is pipeline/SKILL.md Step 5)
+### 5b. Watch remote CI (Monitor event-stream — this skill's own CI-green gate)
 
-After `PR_CREATED`, the orchestrator runs an advisory CI-watch before proceeding to
+After `PR_CREATED`, run an advisory CI-watch yourself before proceeding to
 the cost annotator. This sub-phase drives the in-cycle fix loop on RED and emits
 `watch-skipped:operator-cancel` on operator interruption. It subscribes to a Monitor
-event-stream for results — this CI-watch is advisory (not a blocking gate). The enforcing
-CI-green gate is at `skills/pipeline/SKILL.md` Step 5 (Deploy entry), which blocks
-`Ship→Deploy` on any non-conclusively-green status.
+event-stream for results — the subscription itself is advisory (not a blocking gate).
+The enforcing CI-green gate is `ci_status_decision(PR)`, defined inline below (this
+§ 5b's own GREEN/RED/PENDING decision procedure) — it blocks `Ship→Deploy` on any
+non-conclusively-green status. There is no separate pipeline-phase gate on the
+Codex side and no external helper script; this skill carries its own enforcement
+end to end.
+
+**`ci_status_decision(PR)` decision procedure** (the authoritative live re-check,
+distinct from the advisory event-stream subscription above):
+- **GREEN**: every check-run matched to the captured `headRefOid` has concluded
+  `success` or `skipped`, AND at least one matched run exists.
+- **RED**: any matched run concluded `failure`, `cancelled`, or `timed_out`.
+- **PENDING**: any matched run is still `in_progress` or `queued` — wait, do not
+  decide yet.
+- **Unevaluable** (no matched runs, `gh pr checks` errors, or a state that fits
+  none of the above): fail closed — never emit `CI_GREEN`. Route to
+  `watch-skipped:<reason>` per the unreadable/no-runs path below.
 
 **Arm the event-stream subscription:**
 
@@ -310,9 +325,9 @@ While the subscription is active, the operator sees:
 When ≥1 check-run matches the captured `headRefOid` AND the decoder classifies all
 matched events as `candidate-green`:
 - The GREEN decision is NOT made on the event alone. The candidate-green event triggers
-  an authoritative `ci_status_decision(PR)` live re-check (see `hooks/_lib/ci-status-reader.sh`).
-  Only `ci_status_decision`'s exit 0 emits `CI_GREEN`. A forged or stale event can
-  never produce a false green.
+  an authoritative `ci_status_decision(PR)` live re-check (the decision procedure
+  defined in § 5b above). Only a GREEN result from that procedure emits `CI_GREEN`.
+  A forged or stale event can never produce a false green.
 - Proceed to Step 6 (cost annotator).
 
 If the matched-run set is empty (zero check-runs match the captured `headRefOid` —
@@ -358,26 +373,25 @@ next poll-interval tick. Re-entry latency drops from poll-interval to time-of-fa
 **Operator cancel escape hatch:**
 
 If the operator cancels within the notify window or interrupts the subscription
-mid-flight (e.g. known CI flake, persistent fix-engineer stall loop), the orchestrator
-emits:
+mid-flight (e.g. known CI flake, a stalled fix loop), emit:
 
 ```
 CI status: watch-skipped:operator-cancel
 ```
 
 with an explicit note: "CI status unverified — the advisory watch did not confirm
-a CI conclusion. NOTE: the enforcing CI-green gate at `skills/pipeline/SKILL.md`
-Step 5 runs next and will BLOCK Ship→Deploy unless CI is conclusively green (or
-the operator sets `CLAUDE_CI_GREEN_GATE=off`). Cancelling the watch does not
-bypass the gate."
+a CI conclusion. NOTE: the enforcing CI-green gate (`ci_status_decision(PR)`, this
+skill's own § 5b GREEN/RED path logic) runs next and will BLOCK Ship→Deploy unless
+CI is conclusively green (or the operator sets `CLAUDE_CI_GREEN_GATE=off`).
+Cancelling the watch does not bypass the gate."
 
 **Unreadable / no-runs path:**
 
 If `gh pr checks` returns no runs or errors, or the decoder exits 2 for every event
 line, emit `CI status: watch-skipped:<reason>` and proceed. `watch-skipped` leaves
-CI status unverified for the advisory watch; the enforcing CI-green gate at
-`skills/pipeline/SKILL.md` Step 5 then BLOCKs Ship→Deploy on unreadable/non-green
-status.
+CI status unverified for the advisory watch; the enforcing CI-green gate
+(`ci_status_decision(PR)`, this skill's own § 5b GREEN/RED path logic) then BLOCKs
+Ship→Deploy on unreadable/non-green status.
 
 ### 6. Annotate PR cost on CI-green
 
@@ -446,28 +460,15 @@ Verify `gh auth status`, re-authenticate if needed, retry.
 ### Remote branch conflicts
 Pull latest main, rebase feature branch, resolve conflicts, push with `--force-with-lease`.
 
-## Spec-Blind Validation
-
-Every PR body includes a `## Spec-Blind Validation` section reflecting the spec-blind-validator's verdict from the Final Gate. The validator runs as a 5th Final Gate teammate that authors black-box behavioural tests from the AC plan + public API surface ONLY — never from `src/` internals.
-
-The section's content depends on the verdict:
-
-- **SPEC_BLIND_VALIDATED** — `spec-blind validator passed: independent test suite cross-validates the build-time tests.`
-- **SPEC_BLIND_INSUFFICIENT_SURFACE** — `spec-blind validator was skipped — no public-surface artifacts found in this repo. See SKILL.md § Future Work for V2 harness-aware path.`
-- **SPEC_BLIND_FAILED** — should not appear in a merged PR (gate must pass before Ship); included here for forensic traceability if the gate was suppressed.
-- **SPEC_BLIND_BLOCKED** — should not appear in a merged PR (HALT pipeline routing per `protocols/verdict-catalog.md`); included here for operator visibility on suppressed-gate forensics.
-
-The section makes the no-op visible — silent skips would let the gate become unattended on convention-poor projects (per the plan's AC18 mitigation).
-
 ## Decision Narrative
 
 Every PR includes a non-technical decision narrative section:
 
-1. **Collect agent summaries**: Include a summary request in the original agent spawn prompt: "Before finishing, output a '## Agent Summary' section with 2-3 sentences on what you did, decisions made, and trade-offs." The orchestrator collects these summaries from agent outputs after completion.
+1. **Write a summary of your own work**: before finishing, write 2-3 sentences on what you did, decisions made, and trade-offs — there is no separate agent output to collect this from.
 2. **Assemble into PR body** under a "## Decision Log" section:
    - **What**: What was built and why (business context)
    - **Why**: Key decisions and trade-offs (what was considered and rejected)
-   - **How**: How each agent contributed (design rationale, review findings)
+   - **How**: Design rationale, review findings from your own `$harness-code-review`/`$harness-security-review` pass
    - **Verified**: Verification report summary in plain language
 3. Must be readable by non-technical stakeholders (product owners, designers)
 
@@ -500,10 +501,10 @@ When the pipeline provides a manifest path, this skill creates linked PRs:
    - Depended on by: {org}/{consumer-repo}#{N}
    ```
 4. **Apply labels**: From manifest `## Services > GitHub > labels` if configured
-5. **Return all PR URLs**: The orchestrator tracks them in the pipeline state PR Manifest
+5. **Return all PR URLs**: Record them yourself in the pipeline state PR Manifest — there is no orchestrator tracking this on your behalf.
 
 ### Merge Order
-The orchestrator handles merge ordering — this skill only creates PRs. It adds a `## Merge Order` note to each PR body so human reviewers understand the dependency.
+This skill only creates PRs; it does not merge them. It adds a `## Merge Order` note to each PR body so human reviewers (or whichever harness picks up the merge step) understand the dependency.
 
 ## Best Practices
 
@@ -518,16 +519,15 @@ The orchestrator handles merge ordering — this skill only creates PRs. It adds
 
 ## Prerequisite
 
-- Accept phase complete: `/harness:product-acceptance` returned APPROVED
-- All prior phase verdicts: BUILD_COMPLETE, APPROVE (both reviews), VERIFIED, COVERED, APPROVED
-- Approval token written by /harness:product-acceptance (verified at Step 0 above).
+- Build/fix work complete: BUILD_COMPLETE, APPROVE (both `$harness-code-review` and `$harness-security-review`)
+- If this PR is part of a full Claude-orchestrated pipeline, its Accept-phase approval token exists (Step 0 above handles the "no active pipeline" case when it doesn't)
 
 ## Verdict
 
 - **PR_CREATED**: PR URL returned, quality gate hook passed. Advisory CI-watch (Step 5b) follows.
 - **PR_BLOCKED**: Quality gate failed. Fix issues and retry.
 - **CI_GREEN**: All `gh pr checks` runs concluded SUCCESS against the pushed headRefOid; CI-green gate passed — proceed to cost annotator (Step 6) then Deploy.
-- **CI_RED**: ≥1 `gh pr checks` run concluded FAILURE (or CI status unreadable); pull `--log-failed`, re-enter in-cycle fix loop, verify `git ls-remote` == claimed SHA, re-arm watch. The enforcing CI-green gate at pipeline/SKILL.md Step 5 HALTS Ship→Deploy until CI is conclusively green.
+- **CI_RED**: ≥1 `gh pr checks` run concluded FAILURE (or CI status unreadable); pull `--log-failed`, re-enter in-cycle fix loop, verify `git ls-remote` == claimed SHA, re-arm watch. The enforcing CI-green gate (`ci_status_decision(PR)`, this skill's own § 5b GREEN/RED path logic) HALTS Ship→Deploy until CI is conclusively green.
 
 ## Phase Output
 

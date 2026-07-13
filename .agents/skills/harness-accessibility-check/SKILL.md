@@ -1,11 +1,9 @@
 ---
 name: "accessibility-check"
-description: "Run axe-core against changed routes and gate on WCAG 2.1 AA violations; invoked by the pipeline after frontend Build and by design-qc in-process during Final Gate."
+description: "Run axe-core against changed routes and gate on WCAG 2.1 AA violations. Run this yourself after frontend build work."
 verdict: "A11Y_CHECK_PASSED / A11Y_CHECK_FAILED / A11Y_CHECK_SKIPPED"
 phase: "utility"
-dispatch: "subagent"
-context: fork
-agent: qa-engineer
+dispatch: "skill-tool"
 ---
 
 # Accessibility Check
@@ -58,9 +56,9 @@ Repeated `--url` flags, one per route.
 
 ### Step 2: Invocation Modes
 
-#### Pipeline Standalone (via Dev Server Contract)
+#### Standalone (via Dev Server Contract)
 
-The pipeline orchestrator starts the dev server per the project `## Dev Server` contract before invoking this skill. If the `## Dev Server` contract is absent from the project CLAUDE.md:
+Start the dev server yourself per the project `## Dev Server` contract before running this skill. If the `## Dev Server` contract is absent from the project CLAUDE.md:
 
 - emit `A11Y_CHECK_SKIPPED` with `skip_reason: no-dev-server-contract`
 - write a scratchpad warning (see Failure Modes below)

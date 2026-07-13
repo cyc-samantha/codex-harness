@@ -1,55 +1,50 @@
 ---
 name: "code-review"
-description: "Use when user wants to Review phase skill: spawn code-reviewer agent to audit code for SOLID/DRY violations, security issues, test quality, performance, and complexity."
+description: "Inline self-review pass over your own diff before handing work back: SOLID/DRY, cohesion, test quality, complexity, naming. Run this on yourself — there is no separate reviewer to spawn."
 context: fork
-agent: code-reviewer
 ---
 
-# Code Review
-
-## Advisor Mode (Sonnet executor + Opus advisor)
-
-**Pairing**: code-reviewer ships with `executor: mid` and `advisor: strong (resolves to the GA Opus)` in its frontmatter. Sonnet drives the review (cheap, fast, large-context-friendly), Opus is consulted for design-judgement calls.
-
-**Status**: This is the **intended default** — currently advisory because the Agent input schema does not yet expose `advisor`. Will become the enforced default the moment the schema lands. Until then, the `pre-agent-advisor.sh` PreToolUse hook logs the would-be pairing to `metrics/{session}/advisor-dispatch.jsonl` for observability; no spawn is blocked, no model is downgraded.
-
-**Fallback semantics** (all log-only today, all enforced later):
-- Frontmatter pairing present + `ANTHROPIC_API_KEY` set + `CLAUDE_REVIEW_ADVISOR_DISABLED` unset → executor=sonnet, advisor=opus (`source: frontmatter-pairing`)
-- `CLAUDE_REVIEW_ADVISOR_DISABLED=1` → executor/advisor both null, `source: env-disabled` (operator override; pure `model:` opus solo)
-- `ANTHROPIC_API_KEY` missing → executor/advisor both null, `source: no-api-key`
-- Frontmatter omits executor/advisor (e.g. software-engineer) → not a reviewer; `source: no-pairing-frontmatter`
-
-**Cost** (PROVISIONAL pending advisor-baseline):
-- Naive Opus-solo cost vs. Sonnet+Opus-advisor pairing: roughly ~40% cheaper per review (PROVISIONAL — see `eval/baselines/{latest}-advisor-baseline.md`).
-- Quality-equivalence claim (≥95% verdict-agreement on the regression suite) is also PROVISIONAL until advisor-baseline runs.
+# Code Review (inline self-review)
 
 ## What This Skill Does
 
-Automates the Review phase code audit. Spawns a read-only code-reviewer agent to assess code quality against engineering standards.
+A single-thread contractor has no separate code-reviewer role to spawn —
+this skill is the checklist you run against your OWN diff, in the same
+session that wrote it, before you consider the work done or hand it back
+via `HANDOFF.md`. Read the diff as if you were seeing it for the first
+time: the value of a review pass is fresh eyes on judgment calls, not a
+second agent.
 
 ## Current Context
+
 - Branch: !`git branch --show-current`
 - Changed files: !`git diff main...HEAD --name-only 2>/dev/null || echo 'N/A'`
 - Diff stats: !`git diff main...HEAD --stat 2>/dev/null || echo 'N/A'`
 
 ## Review Focus
 
-The build agent has already passed: shape hooks (blocking), TypeScript strict, full test suite, and self-review. Do not re-verify these.
+The build step already passed: shape hooks (blocking), type/lint checks,
+and the full test suite. Do not re-verify those — focus on what requires
+judgment:
 
-Focus on what requires judgment:
 - Design decisions and abstractions
 - Naming clarity and intent
 - DRY/SOLID at the design level (not line counting)
 - Edge cases and untested scenarios
 - Integration with the broader codebase
 
-If shape violations reach you, flag it as a process issue ("build hooks should have caught this") rather than a code finding.
+If a shape violation still made it into the diff, that is a hook gap, not
+a code finding — note it and move on; do not treat it as your own review
+finding.
 
-## When to Invoke
+## When to Run
 
-- After Build phase completes (tests green, shape constraints met)
-- Run IN PARALLEL with `/harness:security-review` — both are read-only, independent
-- Both must APPROVE before advancing to Verify phase
+- After the build/fix work is functionally complete (tests green, shape
+  constraints met), before writing `Done (verified)` into a `HANDOFF.md`
+  or otherwise declaring the work finished.
+- Run alongside `$harness-security-review` — both are read-only passes
+  over the same diff; running one right after the other in the same
+  session is fine, there is no parallelism to coordinate.
 
 ## Process
 
@@ -60,34 +55,31 @@ git diff main...HEAD --stat
 git log main...HEAD --oneline
 ```
 
-### 2. Spawn Code Reviewer
+### 2. Review Against the Checklist
 
-```
-Agent({
-  subagent_type: "code-reviewer",
-  prompt: "Review the changes on this branch against main. Check for:
-    - SOLID/DRY violations
-    - Cohesion violations: functions doing more than one thing (name has a conjunction), missing single-responsibility, duplicated logic
-    - Test quality (coverage, meaningful assertions, edge cases)
-    - Performance red flags (N+1 queries, unnecessary re-renders, memory leaks)
-    - Complexity (CC > 5, nesting > 2). Function/file size is advisory — flag only if size correlates with a cohesion failure.
-    - Naming clarity and code readability
-    Produce a verdict: APPROVE or CHANGES_REQUESTED with specific findings."
-})
-```
+Walk the diff hunk by hunk against the Review Checklist below. For each
+finding, assign a severity (Severity Grading) and note whether it was
+preventable at write-time (Preventability Classification) — that record
+feeds a later `/harness:learn` pass on the Claude side (this repo does
+not carry its own `learn` port — see `pipeline-state/HANDOFF-CONTRACT.md`
+§ Observation tagging).
 
-No `isolation: "worktree"` — code-reviewer is read-only.
+### 3. Act on Findings
 
-### 3. Process Verdict
-
-- **APPROVE**: Advance to next phase. Record reviewer summary for PR narrative.
-- **CHANGES_REQUESTED**: Spawn the original engineer (with worktree) to address findings. Then re-run this skill.
+- **No CRITICAL/HIGH/MEDIUM findings**: the diff is APPROVE — proceed to
+  the next step (verify/ship/handoff).
+- **Any CRITICAL/HIGH/MEDIUM findings**: fix them yourself, in this same
+  session, before proceeding. Re-run the checklist against the updated
+  diff. There is no "spawn someone else to fix it" step — you are the
+  only engineer on shift.
 
 ## Review Checklist
 
-Shape measurements are enforced by build hooks. Include measurements in your report for the audit trail, but do not flag passing measurements as findings. Only flag if a measurement EXCEEDS limits despite hooks — this indicates a hook bypass, and the finding severity is "process" (fix the hooks, not the code).
+Shape measurements are enforced by build hooks. Only flag a measurement
+if it EXCEEDS limits despite the hooks — that indicates a hook gap, and
+the finding severity is "process" (fix the hook, not just the code).
 
-- [ ] Shape constraints met (see `protocols/engineering-invariants.md`)
+- [ ] Shape constraints met (AGENTS.md § Code Shape Rules)
 - [ ] No DRY violations (duplicated logic)
 - [ ] SRP: each class/module has one reason to change
 - [ ] Tests are meaningful (not just coverage padding)
@@ -95,37 +87,7 @@ Shape measurements are enforced by build hooks. Include measurements in your rep
 - [ ] Error handling follows guard clause pattern
 - [ ] No hardcoded values (extract to constants)
 
-## Adversarial Review Mode (Budget >= 10 OR Sensitive Code)
-
-When activated by the pipeline, two code-reviewers are spawned with different focus areas:
-
-- **Reviewer A** (this default prompt): Focus on abstractions, naming, DRY/SOLID, design quality
-- **Reviewer B** (edge-case prompt): Focus on edge cases, error paths, integration concerns, race conditions
-
-Each reviews independently without seeing the other's output. The orchestrator merges findings:
-- Both flag the same area → HIGH confidence finding
-- Only one flags it → MEDIUM confidence, both perspectives included
-- Both APPROVE → advance. Either requests changes → normal review loop.
-
-This mode is transparent to the reviewer — the orchestrator controls dispatch. The reviewer follows this skill normally.
-
-## Parallel Execution
-
-This skill belongs to the `review` parallel group. It is dispatched via Parallel Dispatch Protocol (see `protocols/parallel-dispatch-protocol.md`), not via sequential Skill tool invocation. The code-reviewer agent reads this file directly and executes it.
-
-When dispatched in parallel:
-1. The orchestrator spawns code-reviewer + security-engineer in a single message
-2. Each agent reads its own skill file independently
-3. The orchestrator collects both verdicts before proceeding
-
-## Prerequisite
-
-- Build phase complete: BUILD_COMPLETE verdict from `/harness:build-implementation`, `/harness:refactor`, or `/harness:bug-fix`
-- Must be dispatched IN PARALLEL with `/harness:security-review` via Parallel Dispatch Protocol
-
 ## Severity Grading
-
-Every finding MUST be assigned a severity. Use the calibration table below:
 
 | Severity | Definition | Examples | Blocks? |
 |----------|-----------|----------|---------|
@@ -135,38 +97,46 @@ Every finding MUST be assigned a severity. Use the calibration table below:
 | LOW | Minor improvement or style preference | Variable rename suggestion, comment improvement | No |
 | INFO | Observation, context, or positive feedback | "Nice pattern," "FYI this also handles X" | No |
 
-**Verdict rule:** APPROVE if no CRITICAL, HIGH, or MEDIUM findings. CHANGES_REQUESTED if any CRITICAL, HIGH, or MEDIUM findings exist. LOW and INFO are noted but do not block.
+**Verdict rule:** APPROVE if no CRITICAL, HIGH, or MEDIUM findings.
+CHANGES_REQUESTED (fix-it-yourself) if any exist. LOW and INFO are noted
+but do not block.
 
-**In-cycle enforcement:** CHANGES_REQUESTED findings MUST be fixed in the current pipeline. The orchestrator is not permitted to downgrade findings to follow-up tickets, ship with known-broken behavior, or ask the user whether to defer. See `protocols/pipeline-protocol.md` § In-Cycle Fix Rule. If a finding is genuinely orthogonal (different module, different contract, different user journey), mark it INFO, not MEDIUM.
+**In-cycle enforcement:** CHANGES_REQUESTED findings are fixed in this
+same session, never deferred to a follow-up ticket or shipped
+known-broken. If a finding is genuinely orthogonal (different module,
+different contract, different user journey), mark it INFO, not MEDIUM.
 
 ## Preventability Classification (Backward Feedback)
 
-For each finding, classify whether the build agent could have prevented it:
+For each finding, classify whether it could have been prevented at
+write-time:
 
 | Classification | Criteria | Example |
 |---|---|---|
-| **Preventable** | Standard pattern violation a build agent should catch | Missing input validation, SOLID violation, naming issue |
-| **Review-level** | Requires cross-cutting perspective only a reviewer has | Architectural concern, subtle race condition, design inconsistency |
+| **Preventable** | Standard pattern violation the build step should have caught | Missing input validation, SOLID violation, naming issue |
+| **Review-level** | Requires cross-cutting perspective a fresh read surfaces | Architectural concern, subtle race condition, design inconsistency |
 
-Tag each finding with `preventable: true/false`. The `/harness:learn` skill uses this during Reflect to create build-targeted instincts that prevent the same findings in future pipelines.
+Tag each finding with `preventable: true/false`. The Claude side's
+`/harness:learn` uses this to create instincts that prevent the same
+findings earlier next time.
 
 ## Phase Output
 
 ```
 Verdict: APPROVE / CHANGES_REQUESTED
-Next: If BOTH code-review and security-review APPROVE → /harness:verify
-      If CHANGES_REQUESTED → spawn engineer to fix → re-invoke BOTH review skills
+Next: If APPROVE → proceed (verify/ship/handoff)
+      If CHANGES_REQUESTED → fix in this session, re-run this checklist
 Findings: [list of specific findings with severity and preventability]
-Agent summaries: [code-reviewer's 2-3 sentence summary]
 ```
 
-### Context for Next Phase
+### Context for Next Step
 
-Include a `## Context for Fix/Verify` section in the pipeline state file:
+Record a `## Context for Fix/Verify` note (in `HANDOFF.md` or the
+pipeline-state file, whichever applies) so the next reader — you in a
+later session, or Claude on the next shift — has this:
 
 ```markdown
 ## Context for Fix/Verify
 - **Finding context**: [for each finding: not just "fix X" but "fix X because Y, consider approach Z"]
-- **Areas of strength**: [what the build agent did well — reinforces good patterns]
-- **Decision record responses**: [agree/disagree/note on build agent's decision record entries]
+- **Areas of strength**: [what the diff did well — reinforces good patterns]
 ```

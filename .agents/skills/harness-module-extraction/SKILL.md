@@ -2,7 +2,6 @@
 name: "module-extraction"
 description: "Use when user wants to extract a bounded context into an in-process module with an explicit public port (same repo, no new process or deploy unit)."
 context: fork
-agent: software-engineer
 argument-hint: "What to extract into a module (e.g., 'extract billing into a module with an explicit port')"
 ---
 
@@ -25,7 +24,7 @@ Phases 1–2 ship executable in the MVP and produce reviewable artifacts (a boun
 - Anything requiring a new process, repo, runtime, or network hop
 - Any request that names a forcing function from `protocols/module-boundaries-protocol.md`
 
-If a forcing function is detected in the task context or pipeline state, the skill exits immediately with `WRONG_SKILL: route to /service-extraction`. The orchestrator auto-reroutes per the `WRONG_SKILL` handler contract.
+If a forcing function is detected in the task context or pipeline state, the skill exits immediately with `WRONG_SKILL: this needs a real service extraction, not an in-process module boundary`. This repo does not carry a dedicated service-extraction skill — stop and report the forcing function to the user rather than guessing at a substitute procedure.
 
 ## Phases
 
@@ -167,7 +166,7 @@ Seam enforcement for Phase 4. This table lives here; `protocols/module-boundarie
 - **`MODULE_EXTRACTED`** — all six phases green: boundary analyzed, contract designed, directory moved, seam enforced by lint rule, seam test passing, dependencies injected. Full-implementation path; reachable only after the follow-up pipeline ships phases 3–6 as executable.
 - **`BOUNDARY_READY`** — phases 1–2 complete, artifacts produced (boundary-analysis doc + contract source file). The standard Build pipeline then drives phases 3–6 via TDD against the contract. **This is the MVP verdict.**
 - **`EXTRACTION_BLOCKED: {reason}`** — one of the failure conditions from the phase table. Not an escalation to `/service-extraction` — it's a signal the module isn't ready to be a module yet.
-- **`WRONG_SKILL`** — a forcing function was detected mid-flow (should have been caught at intake). Hand off to `/service-extraction` with the same task context per the orchestrator's `WRONG_SKILL` handler contract.
+- **`WRONG_SKILL`** — a forcing function was detected mid-flow (should have been caught at the start). Stop and report it to the user — this repo has no service-extraction skill to hand off to.
 
 ## Contrast: /harness:module-extraction vs /service-extraction
 

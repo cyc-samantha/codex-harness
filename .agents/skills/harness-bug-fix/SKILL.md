@@ -2,7 +2,6 @@
 name: "bug-fix"
 description: "Root cause analysis workflow with incremental TDD for bug fixes. Covers reproduce, analyze, regression test, fix, verify, and prevent."
 context: fork
-agent: software-engineer
 argument-hint: "Bug description and reproduction steps"
 ---
 
@@ -37,17 +36,14 @@ git log --oneline -5
 
 ## Worktree Isolation
 
-Spawn the fixing engineer with `isolation: "worktree"`:
+Do the fix work in a git worktree (see AGENTS.md § Worktree + Commit
+Protocol), not directly against the checkout you started the session in.
+This ensures the fix is isolated and can be discarded if the approach is
+wrong:
 
+```bash
+git worktree add "$WORKTREE_PATH" -b fix/<short-description>
 ```
-Agent({
-  subagent_type: "software-engineer",
-  isolation: "worktree",
-  prompt: "Fix bug: [description]. Root cause: [analysis]..."
-})
-```
-
-This ensures the fix is isolated and can be discarded if the approach is wrong.
 
 ## Root Cause Analysis Template
 
@@ -106,10 +102,10 @@ After the fix verification checklist passes, produce:
 
 ```
 Verdict: BUG_FIXED / BUG_UNRESOLVED
-Next: /harness:code-review + /harness:security-review (parallel, single message)
+Next: run $harness-code-review and $harness-security-review yourself (inline self-review, either order)
 Reproducer artifact: mapping {path, red_evidence, green_evidence} (REQUIRED on BUG_FIXED — AssertFlip Step 0 output; all three keys mandatory)
 Artifacts: [list of changed/created files, regression test file]
 Root cause: [1-2 sentence summary]
-Agent summaries: [engineer's 2-3 sentence contribution summary]
+Summary: [2-3 sentences on the fix and trade-offs]
 ```
 $ARGUMENTS

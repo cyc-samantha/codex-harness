@@ -2,7 +2,6 @@
 name: "refactor"
 description: "Use when user wants to Safe refactoring workflow: identify smell, write characterization tests, refactor in small steps, verify green after each."
 context: fork
-agent: software-engineer
 argument-hint: "Code smell and target files"
 ---
 
@@ -14,19 +13,17 @@ Guides safe refactoring: never change behavior without tests, commit after each 
 
 ## Worktree Isolation
 
-Spawn the refactoring engineer with `isolation: "worktree"`:
+Do the refactor in a git worktree (see AGENTS.md § Worktree + Commit
+Protocol), not directly against the checkout you started the session in.
+Also read the project's tech stack pattern file if one exists at
+`.agents/skills/harness-[stack]-patterns/SKILL.md` for tech-specific
+guidance before starting:
 
-```
-Agent({
-  subagent_type: "software-engineer",
-  isolation: "worktree",
-  prompt: "Refactor [target]: smell is [smell], characterization tests needed...
-    Also read the project's tech stack pattern file if one exists
-    at .agents/skills/harness-[stack]-patterns/SKILL.md for tech-specific guidance."
-})
+```bash
+git worktree add "$WORKTREE_PATH" -b refactor/<short-description>
 ```
 
-If the refactoring is rejected, the worktree is discarded — no cleanup needed.
+If the refactor is rejected, the worktree is discarded — no cleanup needed.
 
 ## Process
 
@@ -96,8 +93,8 @@ After the final check passes, produce:
 
 ```
 Verdict: REFACTOR_COMPLETE / REFACTOR_FAILED
-Next: /harness:code-review + /harness:security-review (parallel, single message)
+Next: run $harness-code-review and $harness-security-review yourself (inline self-review, either order)
 Artifacts: [list of changed/created files]
-Agent summaries: [engineer's 2-3 sentence contribution summary]
+Summary: [2-3 sentences on the refactor and trade-offs]
 ```
 $ARGUMENTS

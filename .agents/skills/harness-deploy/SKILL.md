@@ -3,7 +3,6 @@ disable-model-invocation: true
 name: "deploy"
 description: "Use when user wants to Continuous deployment skill: environment-aware deploy with pre-flight checks, staging verification, production rollout, and rollback."
 context: fork
-agent: infrastructure-engineer
 argument-hint: "Target environment (staging|production) and optional deployment strategy"
 ---
 
@@ -37,7 +36,7 @@ Scan the project for deployment configuration:
 | `render.yaml` | Render | Push triggers deploy |
 | `railway.json` | Railway | `railway up` |
 
-If no deployment config is found, recommend `/harness:infra-scaffold` first.
+If no deployment config is found, this repo has no infra-scaffold skill to generate one — hand back to Claude (or the user) to set up deployment config first.
 
 ### Step 2: Pre-Deploy Checks
 
@@ -110,8 +109,8 @@ If post-deploy verification fails:
 After rollback:
 1. Verify health check passes on rolled-back version
 2. Investigate failure cause
-3. Create a bug fix story via `/harness:intake`
-4. Re-enter pipeline from Build phase
+3. Run `$harness-bug-fix` yourself against the failure (reproduce, root-cause, regression test — this repo has no intake/triage skill to route through)
+4. Re-verify and redeploy once the fix is committed
 
 ### Step 6: Post-Deploy Verification (Automatic)
 

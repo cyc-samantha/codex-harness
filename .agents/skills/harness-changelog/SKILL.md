@@ -2,7 +2,6 @@
 name: "changelog"
 description: "Use to ship a PR with a human-readable narrative and changelog entry: derives a 'what changed and why' PR body plus a Keep-a-Changelog entry from the diff and ACs."
 context: fork
-agent: software-engineer
 model: haiku
 argument-hint: "Optional: path to CHANGELOG.md (defaults to repo-root CHANGELOG.md)"
 ---

@@ -2,7 +2,6 @@
 name: "db-migration"
 description: "Use when user wants to Structured database migration workflow."
 context: fork
-agent: database-engineer
 argument-hint: "Migration description (e.g., 'add email_verified column to users')"
 ---
 
