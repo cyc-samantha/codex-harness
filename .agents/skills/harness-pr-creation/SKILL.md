@@ -277,10 +277,22 @@ After `PR_CREATED`, run an advisory CI-watch yourself before proceeding to
 the cost annotator. This sub-phase drives the in-cycle fix loop on RED and emits
 `watch-skipped:operator-cancel` on operator interruption. It subscribes to a Monitor
 event-stream for results — the subscription itself is advisory (not a blocking gate).
-The enforcing CI-green gate is `ci_status_decision(PR)` (`hooks/_lib/ci-status-reader.sh`,
-invoked in the GREEN/RED path logic below) — it blocks `Ship→Deploy` on any
+The enforcing CI-green gate is `ci_status_decision(PR)`, defined inline below (this
+§ 5b's own GREEN/RED/PENDING decision procedure) — it blocks `Ship→Deploy` on any
 non-conclusively-green status. There is no separate pipeline-phase gate on the
-Codex side; this skill carries its own enforcement end to end.
+Codex side and no external helper script; this skill carries its own enforcement
+end to end.
+
+**`ci_status_decision(PR)` decision procedure** (the authoritative live re-check,
+distinct from the advisory event-stream subscription above):
+- **GREEN**: every check-run matched to the captured `headRefOid` has concluded
+  `success` or `skipped`, AND at least one matched run exists.
+- **RED**: any matched run concluded `failure`, `cancelled`, or `timed_out`.
+- **PENDING**: any matched run is still `in_progress` or `queued` — wait, do not
+  decide yet.
+- **Unevaluable** (no matched runs, `gh pr checks` errors, or a state that fits
+  none of the above): fail closed — never emit `CI_GREEN`. Route to
+  `watch-skipped:<reason>` per the unreadable/no-runs path below.
 
 **Arm the event-stream subscription:**
 
@@ -313,9 +325,9 @@ While the subscription is active, the operator sees:
 When ≥1 check-run matches the captured `headRefOid` AND the decoder classifies all
 matched events as `candidate-green`:
 - The GREEN decision is NOT made on the event alone. The candidate-green event triggers
-  an authoritative `ci_status_decision(PR)` live re-check (see `hooks/_lib/ci-status-reader.sh`).
-  Only `ci_status_decision`'s exit 0 emits `CI_GREEN`. A forged or stale event can
-  never produce a false green.
+  an authoritative `ci_status_decision(PR)` live re-check (the decision procedure
+  defined in § 5b above). Only a GREEN result from that procedure emits `CI_GREEN`.
+  A forged or stale event can never produce a false green.
 - Proceed to Step 6 (cost annotator).
 
 If the matched-run set is empty (zero check-runs match the captured `headRefOid` —
