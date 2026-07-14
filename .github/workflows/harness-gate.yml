@@ -4,7 +4,14 @@ name: harness-gate
 # that touches the enforcement surface. Dependency-light: ubuntu-latest + bats
 # (from apt) + jq + git, no language toolchain.
 
+# Push trigger is deliberately UNFILTERED (no `paths:`) — a path-filtered
+# push would silently skip runs on main commits that touch only
+# non-listed files, defeating "every push to main runs the gate". The
+# job is sub-minute, so unfiltered-on-main is cheap and correct. Path
+# filters stay on `pull_request` only — do not add `paths:` here.
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - ".codex/hooks/**"
@@ -12,6 +19,9 @@ on:
       - ".agents/skills/**"
       - "tests/shell/**"
       - ".github/workflows/harness-gate.yml"
+      - "scripts/**"
+      - "AGENTS.md"
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -22,11 +32,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install bats and jq
-        run: sudo apt-get update && sudo apt-get install -y bats jq
+      - name: Install bats, jq, and shellcheck
+        run: sudo apt-get update && sudo apt-get install -y bats jq shellcheck
 
       - name: Verify hooks.json is valid JSON
         run: jq -e . .codex/hooks/hooks.json > /dev/null
+
+      - name: Lint shell sources
+        run: shellcheck --severity=error .codex/hooks/*.sh .codex/hooks/_lib/*.sh scripts/*.sh
 
       - name: Run enforcement-hook test suite
         run: bats tests/shell/
