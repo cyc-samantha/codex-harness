@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from builder_guardian_contract import digest
 from builder_guardian_state import PipelineState, StateError, git, now
 
 
@@ -56,12 +57,16 @@ def collect_results(state: PipelineState) -> list[dict]:
 def write_evidence(state: PipelineState, target: str, results: list[dict]) -> None:
     evidence = {"task_id": state.data["task_id"], "run_id": state.data["run_id"],
                 "repository": str(state.repo), "worktree": state.data["worktree"],
-                "approved_commit": target, "timestamp": now(), "commands": results}
+                "approved_commit": target, "timestamp": now(), "commands": results,
+                "status": "PASSED" if all(item["exit_code"] == 0 for item in results) else "FAILED"}
     (state.directory / "verification.json").write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+    state.data["verification_hash"] = digest(evidence)
 
 
 def fail_verification(state: PipelineState) -> None:
     state.data.pop("review_target", None)
+    state.data.pop("guardian_verdict_hash", None)
+    state.data.pop("verification_hash", None)
     state.transition("VERIFICATION_FAILED", "verifier", "required deterministic check failed", "deterministic-verifier")
     state.transition("BUILDING", "orchestrator", "verification defect requires a new target")
     raise StateError("VERIFICATION_FAILED")

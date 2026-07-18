@@ -104,8 +104,15 @@ class PipelineState:
         self.check_handoff_identity(package)
         actual_files = self.changed_files(package)
         self.check_scope(actual_files)
+        self.verify_builder_package(package, actual_files)
         self.validate_handoff_evidence(package)
         self.store_handoff(package)
+
+    def verify_builder_package(self, package: dict, actual_files: list[str]) -> None:
+        from builder_guardian_evidence import execute_builder_checks, validate_test_paths
+
+        validate_test_paths(Path(package["worktree"]), package["tests_changed"], actual_files)
+        package["results"] = execute_builder_checks(self.contract["builder_checks"], Path(package["worktree"]))
 
     def validate_handoff_shape(self, package: dict) -> None:
         required = {"task_id", "review_target", "base_commit", "changed_files", "summary",
@@ -125,8 +132,7 @@ class PipelineState:
         if set(package["ac_evidence"]) != expected_ac:
             raise StateError("BLOCKED: incomplete acceptance evidence")
         expected_checks = {item["command"] for item in self.contract["builder_checks"]}
-        reported_checks = {item.get("command") for item in package["results"] if item.get("passed")}
-        if not package["tests_changed"] or not expected_checks <= reported_checks:
+        if {item["command"] for item in package["results"]} != expected_checks:
             raise StateError("BLOCKED: Builder validation incomplete")
 
     def store_handoff(self, package: dict) -> None:
@@ -136,12 +142,20 @@ class PipelineState:
         self.transition("AWAITING_REVIEW", "builder", "immutable handoff accepted", package["builder_session_id"])
 
     def check_handoff_identity(self, package: dict) -> None:
+        self.validate_base_target(package)
+        from builder_guardian_evidence import branch_matches, target_descends
+        if not target_descends(self.repo, package["base_commit"], package["review_target"]):
+            raise StateError("BLOCKED: review target does not descend from base")
+        if not branch_matches(Path(package["worktree"]), package["branch"]):
+            raise StateError("BLOCKED: Builder branch identity mismatch")
+        self.validate_worktree(package)
+
+    def validate_base_target(self, package: dict) -> None:
         base_match = Path(package["repository"]).resolve() == self.repo and package["base_commit"] == self.contract["base_commit"]
         if not base_match:
             raise StateError("BLOCKED: handoff identity mismatch")
         if git(self.repo, "rev-parse", package["review_target"]) != package["review_target"]:
             raise StateError("BLOCKED: invalid review target")
-        self.validate_worktree(package)
 
     def validate_worktree(self, package: dict) -> None:
         worktree = Path(package["worktree"]).resolve()
@@ -190,21 +204,42 @@ class PipelineState:
         identities = self.evidence_identities(evidence, verdict)
         clean_target = (git(self.review_repo, "rev-parse", "HEAD") == self.data["review_target"]
                         and not git(self.review_repo, "status", "--porcelain"))
-        if not all(identities) or not clean_target:
+        if not all(identities) or not clean_target or not self.artifacts_authorize(evidence, verdict):
             raise StateError("BLOCKED: stale evidence")
 
+    def artifacts_authorize(self, evidence: dict, verdict: dict) -> bool:
+        hashes = (digest(evidence) == self.data.get("verification_hash"),
+                  digest(verdict) == self.data.get("guardian_verdict_hash"))
+        ac_pass = all(item.get("result") == "PASS" for item in verdict.get("ac_results", []))
+        guardian_pass = verdict.get("verdict") == "APPROVED" and ac_pass
+        return all(hashes) and guardian_pass and not verdict.get("blocking_findings") and not verdict.get("missing_evidence") and self.verification_passed(evidence)
+
+    def verification_passed(self, evidence: dict) -> bool:
+        expected = [item["command"] for item in self.contract["final_checks"]]
+        actual = [item.get("command") for item in evidence.get("commands", [])]
+        exits_pass = all(item.get("exit_code") == 0 for item in evidence.get("commands", []))
+        return evidence.get("status") == "PASSED" and actual == expected and exits_pass
+
     def evidence_identities(self, evidence: dict, verdict: dict) -> tuple[bool, ...]:
+        return self.verification_identities(evidence) + self.guardian_identities(verdict)
+
+    def verification_identities(self, evidence: dict) -> tuple[bool, ...]:
         return (evidence.get("task_id") == self.data["task_id"], evidence.get("run_id") == self.data["run_id"],
                 Path(evidence.get("repository", "")).resolve() == self.repo,
                 Path(evidence.get("worktree", "")).resolve() == self.review_repo,
-                evidence.get("approved_commit") == self.data["review_target"],
-                verdict.get("reviewed_target") == self.data["review_target"])
+                evidence.get("approved_commit") == self.data["review_target"])
+
+    def guardian_identities(self, verdict: dict) -> tuple[bool, ...]:
+        return (verdict.get("reviewed_target") == self.data["review_target"], verdict.get("task_id") == self.data["task_id"],
+                verdict.get("run_id") == self.data["run_id"], Path(verdict.get("repository", "")).resolve() == self.repo,
+                Path(verdict.get("worktree", "")).resolve() == self.review_repo,
+                verdict.get("guardian_session_id") == self.data.get("guardian_session_id"))
 
     def build_ready_record(self, evidence: dict, verdict: dict) -> dict:
         return {"status": "READY_TO_SHIP", "task_id": self.data["task_id"],
                   "base_commit": self.contract["base_commit"], "approved_commit": self.data["review_target"],
                   "builder_session_id": self.data["builder_session_id"], "guardian_session_id": verdict["guardian_session_id"],
-                  "guardian_verdict": "APPROVED", "verification_status": "PASSED",
+                  "guardian_verdict": verdict["verdict"], "verification_status": evidence["status"],
                   "verification_timestamp": evidence["timestamp"], "changed_files": json.loads((self.directory / "handoff.json").read_text())["changed_files"],
                   "evidence": {"guardian": "guardian-verdict.json", "verification": "verification.json"},
                   "repository": str(self.repo), "worktree": self.data["worktree"], "run_id": self.data["run_id"]}

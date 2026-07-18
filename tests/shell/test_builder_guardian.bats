@@ -7,6 +7,12 @@ setup() {
   STATE_ROOT="$(cxh_mktemp_dir)"
   HARNESS="${BATS_TEST_DIRNAME}/../../scripts/codex-harness"
   CONTRACT="$STATE_ROOT/contract.json"
+  BASE_SHA="$(git -C "$REPO_DIR" rev-parse HEAD)"
+  mkdir -p "$REPO_DIR/tests"
+  echo changed >> "$REPO_DIR/seed"
+  echo regression > "$REPO_DIR/tests/unit"
+  git -C "$REPO_DIR" add seed tests/unit
+  git -C "$REPO_DIR" commit -qm target
   HEAD_SHA="$(git -C "$REPO_DIR" rev-parse HEAD)"
   make_contract
 }
@@ -17,7 +23,7 @@ teardown() {
 }
 
 make_contract() {
-  jq -n --arg repo "$REPO_DIR" --arg sha "$HEAD_SHA" '{
+  jq -n --arg repo "$REPO_DIR" --arg sha "$BASE_SHA" '{
     task_id:"BG-1", objective:"prove workflow", constraints:[], allowed_scope:["seed","tests/**"],
     prohibited_changes:["protected branches"], repository:$repo, base_commit:$sha,
     acceptance_criteria:[{id:"AC-1",statement:"evidence is bound",verification:[{kind:"test",evidence:"exit zero"}]}],
@@ -32,11 +38,11 @@ init_task() {
 }
 
 make_handoff() {
-  jq -n --arg repo "$REPO_DIR" --arg sha "$HEAD_SHA" '{
-    task_id:"BG-1",review_target:$sha,base_commit:$sha,changed_files:[],summary:"done",
+  jq -n --arg repo "$REPO_DIR" --arg target "$HEAD_SHA" --arg base "$BASE_SHA" '{
+    task_id:"BG-1",review_target:$target,base_commit:$base,changed_files:["seed","tests/unit"],summary:"done",
     ac_evidence:{"AC-1":"test"},tests_changed:["tests/unit"],commands:["true"],
     results:[{command:"true",passed:true}],limitations:[],risks:[],builder_session_id:"builder-1",
-    worktree:$repo,branch:"feat/test",repository:$repo
+    worktree:$repo,branch:"main",repository:$repo
   }' > "$STATE_ROOT/handoff-input.json"
 }
 
@@ -123,11 +129,13 @@ while (($#)); do
   shift
 done
 echo built >> "$cwd/seed"
-git -C "$cwd" add seed
+mkdir -p "$cwd/tests"
+echo regression > "$cwd/tests/unit"
+git -C "$cwd" add seed tests/unit
 git -C "$cwd" commit -qm build
 target="$(git -C "$cwd" rev-parse HEAD)"
 base="$(git -C "$cwd" rev-parse HEAD^)"
-jq -n --arg target "$target" --arg base "$base" '{review_target:$target,base_commit:$base,changed_files:["seed"],summary:"built",ac_evidence:{"AC-1":"test"},tests_changed:["tests/unit"],commands:["true"],results:[{command:"true",passed:true}],limitations:[],risks:[]}' > "$output"
+jq -n --arg target "$target" --arg base "$base" '{review_target:$target,base_commit:$base,changed_files:["seed","tests/unit"],summary:"built",ac_evidence:{"AC-1":"test"},tests_changed:["tests/unit"],commands:["true"],results:[{command:"true",passed:true}],limitations:[],risks:[]}' > "$output"
 SH
   chmod +x "$FAKE_BUILDER"
   export CODEX_BIN="$FAKE_BUILDER"
@@ -166,6 +174,7 @@ SH
   make_fake_codex
   sed -i 's/verdict:"APPROVED"/verdict:"CHANGES_REQUESTED"/' "$FAKE_CODEX"
   sed -i 's/ac_results:\[{id:"AC-1",result:"PASS"/ac_results:[{id:"AC-1",result:"FAIL"/' "$FAKE_CODEX"
+  sed -i 's/blocking_findings:\[\]/blocking_findings:[{id:"BG-1",severity:"HIGH",component:"seed",description:"failure",requirement:"AC-1",resolution:"fix",evidence:"inspection"}]/' "$FAKE_CODEX"
   run "$HARNESS" --state-root "$STATE_ROOT" review BG-1
   [ "$status" -eq 0 ]
   [ "$(jq -r .status <<< "$output")" = BUILDING ]
@@ -224,6 +233,12 @@ SH
   run "$HARNESS" --state-root "$STATE_ROOT" gate BG-1
   [ "$status" -eq 2 ]
   [[ "$output" == *"stale evidence"* ]]
+  jq '.verdict="APPROVED"' "$STATE_ROOT/BG-1/guardian-verdict.json" > "$STATE_ROOT/restored"
+  mv "$STATE_ROOT/restored" "$STATE_ROOT/BG-1/guardian-verdict.json"
+  jq '.commands[0].exit_code=1 | .status="FAILED"' "$STATE_ROOT/BG-1/verification.json" > "$STATE_ROOT/tampered"
+  mv "$STATE_ROOT/tampered" "$STATE_ROOT/BG-1/verification.json"
+  run "$HARNESS" --state-root "$STATE_ROOT" gate BG-1
+  [ "$status" -eq 2 ]
 }
 
 @test "verification timeout is recorded and fails closed" {
@@ -252,4 +267,39 @@ SH
   run "$HARNESS" --state-root "$STATE_ROOT" review BG-1
   [ "$status" -eq 2 ]
   [[ "$output" == *REVISION_LIMIT_REACHED* ]]
+}
+
+@test "fabricated Builder check evidence is rejected by independent execution" {
+  jq '.builder_checks=[{name:"must-fail",command:"false"}]' "$CONTRACT" > "$CONTRACT.tmp"
+  mv "$CONTRACT.tmp" "$CONTRACT"
+  init_task
+  make_handoff
+  jq '.results=[{command:"false",passed:true}]' "$STATE_ROOT/handoff-input.json" > "$STATE_ROOT/fake"
+  run "$HARNESS" --state-root "$STATE_ROOT" handoff BG-1 "$STATE_ROOT/fake"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"Builder validation failed"* ]]
+}
+
+@test "empty Guardian rejection findings are invalid" {
+  init_task
+  submit_handoff
+  make_fake_codex
+  sed -i 's/verdict:"APPROVED"/verdict:"CHANGES_REQUESTED"/' "$FAKE_CODEX"
+  sed -i 's/ac_results:\[{id:"AC-1",result:"PASS"/ac_results:[{id:"AC-1",result:"FAIL"/' "$FAKE_CODEX"
+  run "$HARNESS" --state-root "$STATE_ROOT" review BG-1
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"without actionable findings"* ]]
+}
+
+@test "tampered approval and passing-command evidence cannot ship" {
+  init_task
+  submit_handoff
+  approve
+  run "$HARNESS" --state-root "$STATE_ROOT" verify BG-1
+  [ "$status" -eq 0 ]
+  jq '.verdict="CHANGES_REQUESTED"' "$STATE_ROOT/BG-1/guardian-verdict.json" > "$STATE_ROOT/tampered"
+  mv "$STATE_ROOT/tampered" "$STATE_ROOT/BG-1/guardian-verdict.json"
+  run "$HARNESS" --state-root "$STATE_ROOT" gate BG-1
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"stale evidence"* ]]
 }

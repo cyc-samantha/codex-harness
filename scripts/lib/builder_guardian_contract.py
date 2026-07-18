@@ -50,19 +50,23 @@ def validate_contract(value: dict) -> None:
     if invalid_contract_shape(value) or invalid_identity(value):
         raise ContractError("INVALID_TASK_CONTRACT")
     validate_criteria(value["acceptance_criteria"])
+    validate_checks(value["builder_checks"])
     validate_checks(value["final_checks"])
 
 
 def invalid_contract_shape(value: dict) -> bool:
     if not isinstance(value, dict) or REQUIRED - value.keys():
         return True
-    return not value["acceptance_criteria"] or not value["allowed_scope"]
+    collections = ("acceptance_criteria", "constraints", "allowed_scope", "prohibited_changes",
+                   "builder_checks", "final_checks", "expected_deliverables", "risks")
+    return any(not isinstance(value[field], list) for field in collections) or not value["acceptance_criteria"] or not value["allowed_scope"]
 
 
 def invalid_identity(value: dict) -> bool:
-    task_valid = re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value["task_id"])
-    commit_valid = re.fullmatch(r"[0-9a-f]{40,64}", value["base_commit"])
-    return not task_valid or not commit_valid
+    task_valid = isinstance(value["task_id"], str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value["task_id"])
+    commit_valid = isinstance(value["base_commit"], str) and re.fullmatch(r"[0-9a-f]{40,64}", value["base_commit"])
+    strings_valid = all(isinstance(value[field], str) and value[field] for field in ("objective", "repository"))
+    return not task_valid or not commit_valid or not strings_valid
 
 
 def validate_criteria(criteria: list[dict]) -> None:

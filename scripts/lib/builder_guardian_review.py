@@ -8,6 +8,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
+from builder_guardian_contract import digest
 from builder_guardian_state import PipelineState, StateError, git
 
 
@@ -69,6 +70,14 @@ def validate_approval(verdict: dict) -> None:
         raise StateError("BLOCKED: approval lacks complete evidence")
 
 
+def validate_rejection(verdict: dict) -> None:
+    if verdict["verdict"] != "CHANGES_REQUESTED":
+        return
+    failed = any(item["result"] in {"FAIL", "NOT_PROVEN"} for item in verdict["ac_results"])
+    if not failed or not verdict["blocking_findings"]:
+        raise StateError("BLOCKED: changes requested without actionable findings")
+
+
 def validate_findings(verdict: dict) -> None:
     finding_fields = {"id", "severity", "component", "description", "requirement", "resolution", "evidence"}
     if any(finding_fields - finding.keys() or not all(finding.get(field) for field in finding_fields)
@@ -81,6 +90,7 @@ def validate_verdict(state: PipelineState, verdict: dict, session_id: str) -> No
     validate_identity(state, verdict, session_id)
     validate_ac_results(state, verdict)
     validate_approval(verdict)
+    validate_rejection(verdict)
     validate_findings(verdict)
 
 
@@ -105,15 +115,22 @@ def read_verdict(output: Path) -> dict:
 
 def apply_verdict(state: PipelineState, verdict: dict, session_id: str) -> None:
     if verdict["verdict"] == "APPROVED":
-        state.transition("GUARDIAN_APPROVED", "guardian", "all AC evidence approved", session_id)
+        approve_guardian(state, verdict, session_id)
     elif verdict["verdict"] == "CHANGES_REQUESTED":
         request_changes(state, session_id)
     else:
         state.transition("BLOCKED", "guardian", "Guardian review blocked", session_id)
 
 
+def approve_guardian(state: PipelineState, verdict: dict, session_id: str) -> None:
+    state.data["guardian_verdict_hash"] = digest(verdict)
+    state.data["guardian_session_id"] = session_id
+    state.transition("GUARDIAN_APPROVED", "guardian", "all AC evidence approved", session_id)
+
+
 def request_changes(state: PipelineState, session_id: str) -> None:
     state.data.pop("review_target", None)
+    state.data.pop("guardian_verdict_hash", None)
     state.transition("BUILDING", "guardian", "actionable changes requested", session_id)
 
 
