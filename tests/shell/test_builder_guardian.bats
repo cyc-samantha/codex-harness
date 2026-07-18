@@ -102,6 +102,11 @@ approve() {
   jq '.final_checks=[]' "$CONTRACT" > "$CONTRACT.bad"
   run "$HARNESS" --state-root "$STATE_ROOT" init "$CONTRACT.bad"
   [ "$status" -eq 2 ]
+
+  jq '.acceptance_criteria[0].verification=["bad"]' "$CONTRACT" > "$CONTRACT.bad"
+  run "$HARNESS" --state-root "$STATE_ROOT" init "$CONTRACT.bad"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *INVALID_TASK_CONTRACT* ]]
 }
 
 @test "the immutable contract and Builder handoff enforce identity scope tests and checks" {
@@ -351,4 +356,32 @@ SH
   run "$HARNESS" --state-root "$STATE_ROOT" review BG-1
   [ "$status" -eq 2 ]
   [[ "$output" == *"incomplete AC review"* ]]
+}
+
+@test "handoff admission rejects every in-flight and terminal state" {
+  init_task
+  make_handoff
+  for pipeline_state in BLOCKED VERIFYING VERIFIED READY_TO_SHIP; do
+    jq --arg value "$pipeline_state" '.status=$value' "$STATE_ROOT/BG-1/state.json" > "$STATE_ROOT/changed-state"
+    mv "$STATE_ROOT/changed-state" "$STATE_ROOT/BG-1/state.json"
+    run "$HARNESS" --state-root "$STATE_ROOT" handoff BG-1 "$STATE_ROOT/handoff-input.json"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"not admitted"* ]]
+    [ "$(jq -r .status "$STATE_ROOT/BG-1/state.json")" = "$pipeline_state" ]
+  done
+}
+
+@test "ready evidence cannot be superseded by a later handoff" {
+  init_task
+  submit_handoff
+  approve
+  run "$HARNESS" --state-root "$STATE_ROOT" verify BG-1
+  [ "$status" -eq 0 ]
+  run "$HARNESS" --state-root "$STATE_ROOT" gate BG-1
+  [ "$status" -eq 0 ]
+  ready_hash="$(sha256sum "$STATE_ROOT/BG-1/ready.json" | awk '{print $1}')"
+  run "$HARNESS" --state-root "$STATE_ROOT" handoff BG-1 "$STATE_ROOT/handoff-input.json"
+  [ "$status" -eq 2 ]
+  [ "$(sha256sum "$STATE_ROOT/BG-1/ready.json" | awk '{print $1}')" = "$ready_hash" ]
+  [ "$(jq -r .status "$STATE_ROOT/BG-1/state.json")" = READY_TO_SHIP ]
 }

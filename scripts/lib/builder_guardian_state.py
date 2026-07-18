@@ -100,13 +100,21 @@ class PipelineState:
         self.save()
 
     def accept_handoff(self, package: dict) -> None:
+        self.assert_handoff_admitted()
         self.validate_handoff_shape(package)
         self.check_handoff_identity(package)
         actual_files = self.changed_files(package)
         self.check_scope(actual_files)
         self.verify_builder_package(package, actual_files)
+        self.complete_handoff(package)
+
+    def complete_handoff(self, package: dict) -> None:
         self.validate_handoff_evidence(package)
         self.store_handoff(package)
+
+    def assert_handoff_admitted(self) -> None:
+        if self.data["status"] not in {"CONTRACT_READY", "BUILDING"}:
+            raise StateError("BLOCKED: handoff is not admitted in current state")
 
     def verify_builder_package(self, package: dict, actual_files: list[str]) -> None:
         from builder_guardian_evidence import execute_builder_checks, validate_test_paths

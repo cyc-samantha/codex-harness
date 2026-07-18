@@ -59,7 +59,12 @@ def invalid_contract_shape(value: dict) -> bool:
         return True
     collections = ("acceptance_criteria", "constraints", "allowed_scope", "prohibited_changes",
                    "builder_checks", "final_checks", "expected_deliverables", "risks")
-    return any(not isinstance(value[field], list) for field in collections) or not value["acceptance_criteria"] or not value["allowed_scope"]
+    lists_valid = all(isinstance(value[field], list) for field in collections)
+    return not lists_valid or invalid_patterns(value) or not value["acceptance_criteria"] or not value["allowed_scope"]
+
+
+def invalid_patterns(value: dict) -> bool:
+    return any(not isinstance(item, str) for field in ("allowed_scope", "prohibited_changes") for item in value[field])
 
 
 def invalid_identity(value: dict) -> bool:
@@ -76,8 +81,15 @@ def validate_criteria(criteria: list[dict]) -> None:
 
 
 def validate_checks(checks: list[dict]) -> None:
-    if not checks or not all(isinstance(command, dict) and command.get("command") for command in checks):
+    if not checks or not all(valid_check(command) for command in checks):
         raise ContractError("INVALID_TASK_CONTRACT")
+
+
+def valid_check(check: dict) -> bool:
+    if not isinstance(check, dict) or not isinstance(check.get("command"), str) or not check["command"]:
+        return False
+    timeout = check.get("timeout_seconds", 600)
+    return isinstance(timeout, int) and timeout > 0
 
 
 def validate_criterion(criterion: dict, ids: set[str]) -> None:
@@ -90,8 +102,12 @@ def validate_criterion(criterion: dict, ids: set[str]) -> None:
     ids.add(criterion["id"])
 
 def criterion_shape_valid(criterion: dict) -> bool:
-    return isinstance(criterion, dict) and not {"id", "statement", "verification"} - criterion.keys()
+    if not isinstance(criterion, dict) or {"id", "statement", "verification"} - criterion.keys():
+        return False
+    strings_valid = all(isinstance(criterion[field], str) and criterion[field] for field in ("id", "statement"))
+    return strings_valid and isinstance(criterion["verification"], list)
 
 
 def invalid_verification(evidence: list[dict]) -> bool:
-    return any(item.get("kind") not in VERIFICATION_KINDS or not item.get("evidence") for item in evidence)
+    return any(not isinstance(item, dict) or item.get("kind") not in VERIFICATION_KINDS
+               or not isinstance(item.get("evidence"), str) or not item["evidence"] for item in evidence)
