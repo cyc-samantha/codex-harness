@@ -139,6 +139,7 @@ class PipelineState:
         self.data.update({"review_target": package["review_target"], "builder_session_id": package["builder_session_id"],
                           "worktree": package["worktree"], "branch": package["branch"]})
         (self.directory / "handoff.json").write_text(json.dumps(package, indent=2, sort_keys=True) + "\n")
+        self.data["handoff_hash"] = digest(package)
         self.transition("AWAITING_REVIEW", "builder", "immutable handoff accepted", package["builder_session_id"])
 
     def check_handoff_identity(self, package: dict) -> None:
@@ -159,10 +160,21 @@ class PipelineState:
 
     def validate_worktree(self, package: dict) -> None:
         worktree = Path(package["worktree"]).resolve()
+        self.validate_isolation(worktree, package["branch"])
+        self.validate_registration(worktree, package["branch"])
         target_match = git(worktree, "rev-parse", "HEAD") == package["review_target"]
         if not target_match or git(worktree, "status", "--porcelain"):
             raise StateError("BLOCKED: worktree does not match review target")
         self.validate_common_dir(worktree)
+
+    def validate_registration(self, worktree: Path, branch: str) -> None:
+        from builder_guardian_evidence import registered_worktree
+        if not registered_worktree(self.repo, worktree, branch):
+            raise StateError("BLOCKED: unregistered Builder worktree")
+
+    def validate_isolation(self, worktree: Path, branch: str) -> None:
+        if worktree == self.repo or branch in {"main", "master"}:
+            raise StateError("BLOCKED: Builder must use an isolated worktree")
 
     def validate_common_dir(self, worktree: Path) -> None:
         common_dir = Path(git(worktree, "rev-parse", "--git-common-dir"))
@@ -170,6 +182,15 @@ class PipelineState:
             common_dir = worktree / common_dir
         if common_dir.resolve() != (self.repo / ".git").resolve():
             raise StateError("BLOCKED: unregistered Builder worktree")
+
+    def assert_handoff(self) -> None:
+        package = json.loads((self.directory / "handoff.json").read_text())
+        if digest(package) != self.data.get("handoff_hash"):
+            raise StateError("BLOCKED: stale Builder handoff")
+        if package.get("review_target") != self.data.get("review_target"):
+            raise StateError("BLOCKED: stale Builder handoff")
+        self.check_handoff_identity(package)
+        self.changed_files(package)
 
     def check_scope(self, files: list[str]) -> None:
         allowed = self.contract["allowed_scope"]
@@ -185,8 +206,12 @@ class PipelineState:
     def ready_record(self) -> dict:
         if self.data["status"] != "VERIFIED":
             raise StateError("BLOCKED: all gates have not passed")
+        self.assert_handoff()
         evidence, verdict = self.ready_evidence()
         self.validate_ready_evidence(evidence, verdict)
+        return self.finish_ready_record(evidence, verdict)
+
+    def finish_ready_record(self, evidence: dict, verdict: dict) -> dict:
         record = self.build_ready_record(evidence, verdict)
         self.persist_ready_record(record)
         return record

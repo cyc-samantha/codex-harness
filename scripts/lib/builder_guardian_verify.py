@@ -39,12 +39,17 @@ def disposable_checkout(state: PipelineState, destination: Path) -> None:
 
 
 def assert_approved_target(state: PipelineState) -> str:
-    if state.data["status"] != "GUARDIAN_APPROVED":
-        raise StateError("BLOCKED: Guardian approval required")
+    assert_guardian_approved(state)
+    state.assert_handoff()
     target = state.data["review_target"]
-    if git(state.review_repo, "rev-parse", "HEAD") != target or git(state.review_repo, "status", "--porcelain"):
+    clean_target = git(state.review_repo, "rev-parse", "HEAD") == target and not git(state.review_repo, "status", "--porcelain")
+    if not clean_target:
         raise StateError("VERIFICATION_BLOCKED")
     return target
+
+def assert_guardian_approved(state: PipelineState) -> None:
+    if state.data["status"] != "GUARDIAN_APPROVED":
+        raise StateError("BLOCKED: Guardian approval required")
 
 
 def collect_results(state: PipelineState) -> list[dict]:

@@ -76,7 +76,7 @@ def validate_criteria(criteria: list[dict]) -> None:
 
 
 def validate_checks(checks: list[dict]) -> None:
-    if not all(isinstance(command, dict) and command.get("command") for command in checks):
+    if not checks or not all(isinstance(command, dict) and command.get("command") for command in checks):
         raise ContractError("INVALID_TASK_CONTRACT")
 
 

@@ -3,17 +3,18 @@
 load helper
 
 setup() {
-  make_repo
+  make_repo_with_worktree
   STATE_ROOT="$(cxh_mktemp_dir)"
   HARNESS="${BATS_TEST_DIRNAME}/../../scripts/codex-harness"
   CONTRACT="$STATE_ROOT/contract.json"
   BASE_SHA="$(git -C "$REPO_DIR" rev-parse HEAD)"
   mkdir -p "$REPO_DIR/tests"
-  echo changed >> "$REPO_DIR/seed"
-  echo regression > "$REPO_DIR/tests/unit"
-  git -C "$REPO_DIR" add seed tests/unit
-  git -C "$REPO_DIR" commit -qm target
-  HEAD_SHA="$(git -C "$REPO_DIR" rev-parse HEAD)"
+  mkdir -p "$WORKTREE_DIR/tests"
+  echo changed >> "$WORKTREE_DIR/seed"
+  echo regression > "$WORKTREE_DIR/tests/unit"
+  git -C "$WORKTREE_DIR" add seed tests/unit
+  git -C "$WORKTREE_DIR" commit -qm target
+  HEAD_SHA="$(git -C "$WORKTREE_DIR" rev-parse HEAD)"
   make_contract
 }
 
@@ -38,11 +39,11 @@ init_task() {
 }
 
 make_handoff() {
-  jq -n --arg repo "$REPO_DIR" --arg target "$HEAD_SHA" --arg base "$BASE_SHA" '{
+  jq -n --arg repo "$REPO_DIR" --arg worktree "$WORKTREE_DIR" --arg target "$HEAD_SHA" --arg base "$BASE_SHA" '{
     task_id:"BG-1",review_target:$target,base_commit:$base,changed_files:["seed","tests/unit"],summary:"done",
     ac_evidence:{"AC-1":"test"},tests_changed:["tests/unit"],commands:["true"],
     results:[{command:"true",passed:true}],limitations:[],risks:[],builder_session_id:"builder-1",
-    worktree:$repo,branch:"main",repository:$repo
+    worktree:$worktree,branch:"feat/x",repository:$repo
   }' > "$STATE_ROOT/handoff-input.json"
 }
 
@@ -95,6 +96,10 @@ approve() {
   [ "$status" -eq 2 ]
 
   jq '.task_id="../escape"' "$CONTRACT" > "$CONTRACT.bad"
+  run "$HARNESS" --state-root "$STATE_ROOT" init "$CONTRACT.bad"
+  [ "$status" -eq 2 ]
+
+  jq '.final_checks=[]' "$CONTRACT" > "$CONTRACT.bad"
   run "$HARNESS" --state-root "$STATE_ROOT" init "$CONTRACT.bad"
   [ "$status" -eq 2 ]
 }
@@ -187,10 +192,10 @@ SH
   run "$HARNESS" --state-root "$STATE_ROOT" verify BG-1
   [ "$status" -eq 2 ]
   approve
-  echo dirty > "$REPO_DIR/dirty"
+  echo dirty > "$WORKTREE_DIR/dirty"
   run "$HARNESS" --state-root "$STATE_ROOT" verify BG-1
   [ "$status" -eq 2 ]
-  [[ "$output" == *VERIFICATION_BLOCKED* ]]
+  [[ "$output" == *"worktree does not match"* ]]
 }
 
 @test "happy path emits identity-bound READY_TO_SHIP and audit transitions" {
@@ -302,4 +307,48 @@ SH
   run "$HARNESS" --state-root "$STATE_ROOT" gate BG-1
   [ "$status" -eq 2 ]
   [[ "$output" == *"stale evidence"* ]]
+}
+
+@test "repository root cannot impersonate an isolated Builder worktree" {
+  init_task
+  make_handoff
+  jq --arg repo "$REPO_DIR" '.worktree=$repo | .branch="main"' "$STATE_ROOT/handoff-input.json" > "$STATE_ROOT/root-handoff"
+  run "$HARNESS" --state-root "$STATE_ROOT" handoff BG-1 "$STATE_ROOT/root-handoff"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"isolated worktree"* ]]
+}
+
+@test "post-verification handoff tampering cannot ship" {
+  init_task
+  submit_handoff
+  approve
+  run "$HARNESS" --state-root "$STATE_ROOT" verify BG-1
+  [ "$status" -eq 0 ]
+  jq '.changed_files=["forged"]' "$STATE_ROOT/BG-1/handoff.json" > "$STATE_ROOT/tampered"
+  mv "$STATE_ROOT/tampered" "$STATE_ROOT/BG-1/handoff.json"
+  run "$HARNESS" --state-root "$STATE_ROOT" gate BG-1
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"stale Builder handoff"* ]]
+}
+
+@test "Guardian findings must map exactly to failed criteria" {
+  init_task
+  submit_handoff
+  make_fake_codex
+  sed -i 's/verdict:"APPROVED"/verdict:"CHANGES_REQUESTED"/' "$FAKE_CODEX"
+  sed -i 's/result:"PASS"/result:"FAIL"/' "$FAKE_CODEX"
+  sed -i 's/blocking_findings:\[\]/blocking_findings:[{id:"BG-X",severity:"HIGH",component:"seed",description:"failure",requirement:"UNKNOWN",resolution:"fix",evidence:"inspection"}]/' "$FAKE_CODEX"
+  run "$HARNESS" --state-root "$STATE_ROOT" review BG-1
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"without actionable findings"* ]]
+}
+
+@test "duplicate Guardian AC results are rejected" {
+  init_task
+  submit_handoff
+  make_fake_codex
+  printf '%s\n' 'jq '\''.ac_results += [.ac_results[0]]'\'' "$output" > "$output.tmp" && mv "$output.tmp" "$output"' >> "$FAKE_CODEX"
+  run "$HARNESS" --state-root "$STATE_ROOT" review BG-1
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"incomplete AC review"* ]]
 }

@@ -59,7 +59,7 @@ def context_matches(state: PipelineState, verdict: dict) -> bool:
 def validate_ac_results(state: PipelineState, verdict: dict) -> None:
     expected = {item["id"] for item in state.contract["acceptance_criteria"]}
     actual = {item.get("id") for item in verdict["ac_results"]}
-    if actual != expected or any(item.get("result") not in {"PASS", "FAIL", "NOT_PROVEN", "NOT_APPLICABLE"} for item in verdict["ac_results"]):
+    if actual != expected or len(verdict["ac_results"]) != len(expected) or any(item.get("result") not in {"PASS", "FAIL", "NOT_PROVEN", "NOT_APPLICABLE"} for item in verdict["ac_results"]):
         raise StateError("BLOCKED: incomplete AC review")
     if any(item.get("result") == "NOT_APPLICABLE" and not item.get("justification") for item in verdict["ac_results"]):
         raise StateError("BLOCKED: unjustified NOT_APPLICABLE")
@@ -73,8 +73,9 @@ def validate_approval(verdict: dict) -> None:
 def validate_rejection(verdict: dict) -> None:
     if verdict["verdict"] != "CHANGES_REQUESTED":
         return
-    failed = any(item["result"] in {"FAIL", "NOT_PROVEN"} for item in verdict["ac_results"])
-    if not failed or not verdict["blocking_findings"]:
+    failed = {item["id"] for item in verdict["ac_results"] if item["result"] in {"FAIL", "NOT_PROVEN"}}
+    covered = {item.get("requirement") for item in verdict["blocking_findings"]}
+    if not failed or failed != covered:
         raise StateError("BLOCKED: changes requested without actionable findings")
 
 
@@ -161,6 +162,7 @@ def record_verdict(state: PipelineState, verdict: dict, session_id: str) -> None
 
 def run_guardian(state: PipelineState) -> None:
     assert_reviewable(state)
+    state.assert_handoff()
     session_id, output = str(uuid.uuid4()), state.directory / "guardian-output.json"
     dispatch_guardian(state, session_id, output)
     record_verdict(state, read_verdict(output), session_id)

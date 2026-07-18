@@ -17,6 +17,13 @@ def branch_matches(worktree: Path, branch: str) -> bool:
     return git(worktree, "branch", "--show-current") == branch
 
 
+def registered_worktree(repo: Path, worktree: Path, branch: str) -> bool:
+    output = git(repo, "worktree", "list", "--porcelain")
+    expected = f"worktree {worktree}\nHEAD "
+    branch_line = f"branch refs/heads/{branch}"
+    return any(block.startswith(expected) and branch_line in block.splitlines() for block in output.split("\n\n"))
+
+
 def validate_test_paths(worktree: Path, tests: list[str], files: list[str]) -> None:
     if not tests or not set(tests) <= set(files):
         raise StateError("BLOCKED: changed tests are not in the review target")
