@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["review_target", "base_commit", "changed_files", "summary", "ac_evidence", "tests_changed", "commands", "results", "limitations", "risks"],
+  "properties": {
+    "review_target": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+    "base_commit": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+    "changed_files": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "string", "minLength": 1},
+    "ac_evidence": {"type": "object"},
+    "tests_changed": {"type": "array", "items": {"type": "string"}},
+    "commands": {"type": "array", "items": {"type": "string"}},
+    "results": {"type": "array", "items": {"type": "object", "required": ["command", "passed"], "properties": {"command": {"type": "string"}, "passed": {"type": "boolean"}}}},
+    "limitations": {"type": "array"},
+    "risks": {"type": "array"}
+  }
+}

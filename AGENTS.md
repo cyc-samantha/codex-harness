@@ -10,12 +10,12 @@ must be able to state the Iron Laws, the code shape rules, the
 worktree/commit protocol, and the contractor runtime model without chasing
 another file.
 
-Codex is a fallback **contractor** here, not an independent orchestrator:
+Codex is a fallback **contractor** here, not a general-purpose orchestrator:
 it picks up work when the Claude harness's usage window runs out and hands
-it back when Claude returns (see § Runtime Model, below). There is no
-`scripts/codex-harness` dispatch layer, no per-role agent team, and no
-phase-verdict-gating orchestrator on the Codex side — every session is a
-single thread working one task at a time, following the discipline below.
+it back when Claude returns (see § Runtime Model, below). There is no general
+per-role agent team. Guarded delivery is the narrow exception:
+`scripts/codex-harness` coordinates an isolated Builder, fresh read-only
+Guardian, and deterministic verifier for one task contract at a time.
 
 > **Caution — `AGENTS.override.md` precedence.** Codex's discovery chain
 > lets a file closer to the working directory silently override this one.
@@ -75,6 +75,13 @@ are reading this `AGENTS.md` in a tree where `.codex/hooks/main-branch-guard.sh`
 discipline manually and do not assume a guard will catch you. Check with
 `ls .codex/hooks/main-branch-guard.sh` before relying on any hook-backed
 claim in this section.
+
+**Guarded-delivery qualification.** Statements below describing Codex as a
+single session or lacking phase gates apply to the ordinary contractor path.
+With `scripts/codex-harness`, the opt-in Builder–Guardian state machine
+enforces immutable review targets, fresh read-only Guardian approval,
+commit-bound verification, and the sole `READY_TO_SHIP` gate described in
+`docs/BUILDER-GUARDIAN.md`.
 
 1. **NO ACCEPTANCE CRITERION SHIPS WITHOUT (a) a failing-then-passing test
    for that AC in the diff and (b) mutation score ≥ 70% on changed lines.**
@@ -349,17 +356,16 @@ as authoritative and this section's list as the binding subset.
   merged into `main`, has zero uncommitted/untracked changes, and zero
   commits ahead of `main`.
 
-## Working Discipline (single-thread, no phase gates)
+## Working Discipline (Builder–Guardian delivery gate)
 
-There is no orchestrator here driving a phase-verdict state machine. A
-session works one task vertically: TDD (RED before GREEN, per
-`$harness-build-implementation`), the code shape rules above, then your
-own `$harness-code-review` and `$harness-security-review` self-review
-passes (either order — both are read-only checklists over the same diff,
-run by you, not a separate reviewer), then verify/ship or hand back via
-`HANDOFF.md`. "No phase skipped" (Iron Law 5) means you don't skip a step
-in that sequence for yourself — there is no gate that would catch you if
-you did.
+Ordinary contractor work remains single-threaded through TDD and the local
+code/security self-review passes. Guarded delivery additionally uses
+`scripts/codex-harness`: an isolated Builder produces an immutable handoff, a
+separate ephemeral Guardian reviews that exact target with fresh context and a
+read-only sandbox, and deterministic verification runs only after Guardian
+approval. Any Builder change invalidates approval and starts a fresh Guardian
+cycle. Only the coordinator's identity-bound final gate may emit
+`READY_TO_SHIP`; see `docs/BUILDER-GUARDIAN.md`.
 
 ## Runtime Model
 
@@ -402,9 +408,11 @@ Gates on Destructive Verbs, above), never a repo-local copy.
 `.agents/skills/harness-resume-handoff/SKILL.md` for the full procedure
 (check the baton, find the handed-off `HANDOFF.md`, reconcile against git,
 continue `Next Actions` vertically, capture a `source: codex` observation,
-wrap with a return `HANDOFF.md` and a baton flip back to `claude`). Codex
-has no subagent/worktree dispatch equivalent to the Claude harness's
-parallel-subagent default — every step runs in this single session.
+wrap with a return `HANDOFF.md` and a baton flip back to `claude`). Codex has
+no general parallel-subagent dispatch equivalent to the Claude harness. The
+narrow guarded-delivery exception launches one isolated Builder and one fresh
+read-only Guardian in sequence; ordinary handoff work remains in the current
+contractor session.
 
 This preserves the same seed-vs-runtime split the Claude harness already
 uses: this repo ships only curated seed (skills, hooks, rules, config);

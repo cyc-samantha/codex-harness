@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "task_id", "reviewed_target", "guardian_session_id", "repository", "worktree", "run_id", "ac_results", "blocking_findings", "non_blocking_findings", "missing_evidence", "commands", "timestamp"],
+  "properties": {
+    "verdict": {"enum": ["APPROVED", "CHANGES_REQUESTED", "BLOCKED"]},
+    "task_id": {"type": "string"},
+    "reviewed_target": {"type": "string"},
+    "guardian_session_id": {"type": "string"},
+    "repository": {"type": "string"},
+    "worktree": {"type": "string"},
+    "run_id": {"type": "string"},
+    "ac_results": {"type": "array", "items": {"type": "object", "required": ["id", "result", "justification"], "properties": {"id": {"type": "string"}, "result": {"enum": ["PASS", "FAIL", "NOT_PROVEN", "NOT_APPLICABLE"]}, "justification": {"type": "string"}}}},
+    "blocking_findings": {"type": "array", "items": {"type": "object", "required": ["id", "severity", "component", "description", "requirement", "resolution", "evidence"]}},
+    "non_blocking_findings": {"type": "array"},
+    "missing_evidence": {"type": "array"},
+    "commands": {"type": "array"},
+    "timestamp": {"type": "string"}
+  }
+}

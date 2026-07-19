@@ -6,9 +6,10 @@ A thin contractor fallback kit that ports the Claude Code harness's
 engineering discipline onto OpenAI Codex CLI. It shares one
 `HARNESS_DATA` root with the Claude harness (memory, learning, and eval
 state live there, not in a local copy) — this is **not** a full port.
-Codex is treated as a single-thread contractor rather than an
-orchestrator: there is no local agent-team dispatch layer, only the
-enforcement hooks, skill catalog, and pipeline-state contract. See
+Codex is normally a single-thread contractor. Guarded delivery uses an opt-in
+coordinator that launches one isolated Builder and a separate fresh-context,
+read-only Guardian before deterministic verification. The rest of the kit is
+the enforcement hooks, skill catalog, and pipeline-state contract. See
 `PLAN.md` for the full capability mapping and `AGENTS.md` for the
 standalone playbook (13 Iron Laws, code shape rules, phase order,
 worktree/commit protocol).
@@ -41,7 +42,9 @@ Requires `bats` and `jq` on `PATH`. CI runs the same command via
 - `AGENTS.md` — merged CLAUDE.md + rules/core.md, Codex-native autoload
 - `.agents/skills/` — ported skill catalog
 - `.codex/` — `config.toml`, `hooks/`, `rules/`
-- `scripts/` — `install-skills.sh` (no dispatch layer)
+- `scripts/` — skill installation and the guarded-delivery coordinator
+- `scripts/codex-harness` — opt-in Builder–Guardian workflow coordinator;
+  see `docs/BUILDER-GUARDIAN.md`
 - `pipeline-state/` — portable per-task state contract, including the
   `HANDOFF-CONTRACT.md` baton protocol
 - `tests/shell/` — the enforcement-hook (bats) test suite
