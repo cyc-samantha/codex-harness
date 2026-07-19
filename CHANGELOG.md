@@ -8,4 +8,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com).
 
 ### Added
 
-- Add a commit-bound Builder/Guardian delivery gate with isolated review, independent verification, and fail-closed handoff validation
+- Add a commit-bound Builder/Guardian delivery gate with automatic Guardian dispatch, independently sourced patch review, isolated review, independent verification, and fail-closed handoff validation

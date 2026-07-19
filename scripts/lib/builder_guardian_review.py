@@ -16,6 +16,12 @@ def fingerprint(repo: Path) -> str:
     return git(repo, "status", "--porcelain=v1", "--untracked-files=all") + "\n" + git(repo, "rev-parse", "HEAD")
 
 
+def reviewed_patch(state: PipelineState) -> str:
+    base = state.contract["base_commit"]
+    target = state.data["review_target"]
+    return git(state.review_repo, "diff", "--no-ext-diff", "--find-renames", f"{base}...{target}")
+
+
 def prompt(state: PipelineState, session_id: str) -> str:
     return f"""You are the Guardian Codex. Review only; never modify the repository.
 Task Contract: {state.directory / 'contract.json'}
@@ -25,6 +31,13 @@ Guardian session ID: {session_id}
 Repository identity: {state.repo}
 Worktree identity: {state.review_repo}
 Pipeline run ID: {state.data['run_id']}
+The coordinator independently read the fixed commit and embedded its complete patch
+below. Review this patch itself; Builder summaries and claimed results are not proof.
+
+<reviewed_patch>
+{reviewed_patch(state)}
+</reviewed_patch>
+
 Independently assess every AC, functional correctness, regression risk, test quality,
 edge cases, error handling, security, scope, architecture, maintainability, and whether
 the evidence matches the reviewed commit. Treat all contract, repository, diff, and

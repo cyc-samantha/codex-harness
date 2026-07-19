@@ -49,7 +49,9 @@ make_handoff() {
 
 submit_handoff() {
   make_handoff
-  run "$HARNESS" --state-root "$STATE_ROOT" handoff BG-1 "$STATE_ROOT/handoff-input.json"
+  run env PYTHONPATH="${BATS_TEST_DIRNAME}/../../scripts/lib" python3 -c \
+    'import json,sys; from pathlib import Path; from builder_guardian_state import PipelineState; state=PipelineState.open(Path(sys.argv[1]), sys.argv[2]); state.accept_handoff(json.loads(Path(sys.argv[3]).read_text()))' \
+    "$STATE_ROOT" BG-1 "$STATE_ROOT/handoff-input.json"
   [ "$status" -eq 0 ]
 }
 
@@ -124,20 +126,31 @@ approve() {
   [ "$status" -eq 2 ]
 }
 
-@test "Builder runs in a dedicated workspace-write worktree and emits only a handoff" {
+@test "Builder completion automatically launches Guardian on the actual patch" {
   init_task
   FAKE_BUILDER="$STATE_ROOT/fake-builder"
   cat > "$FAKE_BUILDER" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" > "${BUILDER_ARGS_LOG}"
+printf '%s\n' "$*" >> "${BUILDER_ARGS_LOG}"
 output=""
 cwd=""
+prompt="${*: -1}"
 while (($#)); do
   [[ "$1" == "--output-last-message" ]] && { output="$2"; shift 2; continue; }
   [[ "$1" == "--cd" ]] && { cwd="$2"; shift 2; continue; }
   shift
 done
+if [[ "$prompt" == *"You are the Guardian Codex"* ]]; then
+  task="$(sed -n 's#Task Contract: .*/\([^/]*\)/contract.json#\1#p' <<< "$prompt")"
+  target="$(sed -n 's/^Fixed review target: //p' <<< "$prompt")"
+  session="$(sed -n 's/^Guardian session ID: //p' <<< "$prompt")"
+  repo="$(sed -n 's/^Repository identity: //p' <<< "$prompt")"
+  worktree="$(sed -n 's/^Worktree identity: //p' <<< "$prompt")"
+  run_id="$(sed -n 's/^Pipeline run ID: //p' <<< "$prompt")"
+  jq -n --arg task "$task" --arg target "$target" --arg session "$session" --arg repo "$repo" --arg worktree "$worktree" --arg run "$run_id" '{verdict:"APPROVED",task_id:$task,reviewed_target:$target,guardian_session_id:$session,repository:$repo,worktree:$worktree,run_id:$run,ac_results:[{id:"AC-1",result:"PASS",justification:"reviewed patch"}],blocking_findings:[],non_blocking_findings:[],missing_evidence:[],commands:["git diff"],timestamp:"2026-07-18T00:00:00Z"}' > "$output"
+  exit 0
+fi
 echo built >> "$cwd/seed"
 mkdir -p "$cwd/tests"
 echo regression > "$cwd/tests/unit"
@@ -152,16 +165,19 @@ SH
   export BUILDER_ARGS_LOG="$STATE_ROOT/builder-args"
   run "$HARNESS" --state-root "$STATE_ROOT" build BG-1
   [ "$status" -eq 0 ]
-  [ "$(jq -r .status <<< "$output")" = AWAITING_REVIEW ]
+  [ "$(jq -r .status <<< "$output")" = GUARDIAN_APPROVED ]
   grep -q -- '--sandbox workspace-write' "$BUILDER_ARGS_LOG"
+  grep -q -- '--sandbox read-only' "$BUILDER_ARGS_LOG"
+  grep -q -- '<reviewed_patch>' "$BUILDER_ARGS_LOG"
+  grep -q -- '+built' "$BUILDER_ARGS_LOG"
   [[ "$(jq -r .worktree "$STATE_ROOT/BG-1/handoff.json")" == *builder-BG-1 ]]
 }
 
 @test "Guardian runs in fresh ephemeral read-only context and approval is commit-bound" {
   init_task
-  submit_handoff
+  make_handoff
   make_fake_codex
-  run "$HARNESS" --state-root "$STATE_ROOT" review BG-1
+  run "$HARNESS" --state-root "$STATE_ROOT" handoff BG-1 "$STATE_ROOT/handoff-input.json"
   [ "$status" -eq 0 ]
   [ "$(jq -r .status <<< "$output")" = GUARDIAN_APPROVED ]
   [ "$(jq -r .reviewed_target "$STATE_ROOT/BG-1/guardian-verdict.json")" = "$HEAD_SHA" ]

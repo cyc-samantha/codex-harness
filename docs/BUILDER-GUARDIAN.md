@@ -46,14 +46,20 @@ scripts/codex-harness gate <task-id>
 ```
 
 `build` creates a dedicated branch/worktree and launches an ephemeral Builder
-with `workspace-write`. A caller that already manages the Builder can instead
-submit a conforming package with `handoff <task-id> <package.json>`.
+with `workspace-write`. Once the Builder handoff is accepted, the coordinator
+immediately launches Guardian; there is no operator-controlled gap in which the
+Builder's completion can bypass review. A caller that already manages the Builder
+can instead submit a conforming package with `handoff <task-id> <package.json>`;
+an accepted external handoff launches Guardian through the same automatic path.
 
 `review` launches a separate ephemeral Guardian with a `read-only` sandbox. It
-receives only the Task Contract, repository instructions available in the
-checkout, immutable target, changed-file handoff, and test evidence. The
-coordinator fingerprints the repository before and after review and blocks any
-write attempt.
+receives the Task Contract, repository instructions available in the checkout,
+immutable target, and the complete patch read independently from that target by
+the coordinator. The changed-file handoff and test claims are explicitly
+untrusted inputs. The coordinator fingerprints the repository before and after
+review and blocks any write attempt. The `review` command remains available for
+resuming an interrupted task already in `AWAITING_REVIEW`; both `build` and
+`handoff` dispatch Guardian automatically during normal operation.
 
 `verify` is admitted only by `APPROVED`. It checks clean HEAD identity, exports
 the exact approved commit into a disposable checkout, and executes every final

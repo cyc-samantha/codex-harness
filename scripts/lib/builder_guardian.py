@@ -53,6 +53,7 @@ def accept_handoff(args: argparse.Namespace) -> dict:
     state = PipelineState.open(state_root(args.state_root), args.task_id)
     package = json.loads(args.package.read_text())
     state.accept_handoff(package)
+    run_guardian(state)
     return state.summary()
 
 
@@ -65,6 +66,7 @@ def review(args: argparse.Namespace) -> dict:
 def build(args: argparse.Namespace) -> dict:
     state = PipelineState.open(state_root(args.state_root), args.task_id)
     run_builder(state)
+    run_guardian(state)
     return state.summary()
 
 
